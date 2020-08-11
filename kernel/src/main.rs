@@ -10,9 +10,10 @@ extern crate rlibc;
 
 mod memory;
 
+use utils::{assigned_array, x86};
+use utils::{dbg, println};
+
 use memory::pg_dir::{ent_flag, PageDirEntry, NPDENTRIES};
-use utils::assigned_array;
-use utils::x86;
 
 #[used] // must not be removed
 #[no_mangle]
@@ -31,40 +32,28 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ];
 
-fn print(s: &str) {
-    const VGA_BUF: *mut u8 = 0xb8000 as _;
-    for (i, &b) in s.as_bytes().iter().enumerate() {
-        unsafe {
-            *VGA_BUF.add(i * 2 + 0) = b;
-            *VGA_BUF.add(i * 2 + 1) = 0b00001010; // green
-        }
-    }
-}
-fn print_u64(mut x: u64) {
-    let mut buf = [b'.'; 20];
-    let mut i = 0;
-    while x > 0 {
-        let dig = x % 10;
-        buf[i] = core::char::from_digit(dig as _, 10).unwrap() as u8;
-        i += 1;
-        x /= 10;
-    }
-    buf[..i].reverse();
-    print(unsafe { core::str::from_utf8_unchecked(&buf[..i]) });
-}
-
 #[no_mangle]
 pub extern "C" fn main() {
-    for i in 0..10000000000 {
-        print_u64(i);
+    let msg = "hello, world!";
+    #[derive(Debug)]
+    struct MyStruct {
+        x: i32,
+        y: [u8; 3],
+        z: &'static str,
     }
+    let my_st = MyStruct {
+        x: 123,
+        y: [4, 5, 6],
+        z: "789",
+    };
+    dbg!(msg, my_st);
     todo!()
 }
 
 #[panic_handler]
 #[no_mangle]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    x86::nop();
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    println!(utils::vga::ERR_COLOR; "{}", info);
     loop {}
 }
 
