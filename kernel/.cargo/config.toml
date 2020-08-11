@@ -1,0 +1,7 @@
+[build]
+target = "../i386.json"
+target-dir = "../target"
+rustflags = ["-C", "link-args=-Tkernel.ld"]
+
+[unstable]
+build-std = ["core"]

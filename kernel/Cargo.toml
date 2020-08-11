@@ -1,0 +1,13 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+authors = ["algon-320 <algon.0320@gmail.com>"]
+edition = "2018"
+
+[profile.release]
+opt-level = "z"
+lto = true
+
+[dependencies]
+utils = { path = "../utils" }
+rlibc = "1.0.0"
