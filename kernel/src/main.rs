@@ -11,6 +11,7 @@
 
 extern crate rlibc;
 
+mod kalloc;
 mod memory;
 
 use utils::prelude::*;
@@ -51,6 +52,7 @@ pub extern "C" fn main() {
     #[cfg(not(test))]
     {
         log!("main called!");
+        kalloc::init1();
     }
     todo!()
 }
