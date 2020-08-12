@@ -5,3 +5,6 @@ rustflags = ["-C", "link-args=-Tkernel.ld"]
 
 [unstable]
 build-std = ["core"]
+
+[target.i386]
+runner = "qemu_runner.sh"
