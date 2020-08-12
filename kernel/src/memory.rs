@@ -47,3 +47,18 @@ pub mod pg_dir {
     #[repr(transparent)]
     pub struct PageTableEntry(u32);
 }
+
+/// First kernel virtual address
+pub const KERNBASE: usize = 0x80000000;
+
+use utils::prelude::*;
+#[inline]
+pub fn p2v<T>(pa: PAddr<T>) -> VAddr<T> {
+    let raw = pa.raw();
+    VAddr::from((raw + KERNBASE) as *mut _)
+}
+#[inline]
+pub fn v2p<T>(pa: VAddr<T>) -> PAddr<T> {
+    let raw = pa.raw();
+    VAddr::from((raw - KERNBASE) as *mut _)
+}

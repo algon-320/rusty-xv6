@@ -18,6 +18,7 @@ use utils::prelude::*;
 use utils::{assigned_array, x86};
 
 use memory::pg_dir::{ent_flag, PageDirEntry, NPDENTRIES};
+use memory::{p2v, v2p};
 
 #[used] // must not be removed
 #[no_mangle]
@@ -31,7 +32,7 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
                 ent_flag::WRITABLE | ent_flag::PRESENT),
 
     // Map VA's [KERNBASE, KERNBASE + 4MB) to PA's [0, 4MB)
-    [0x80000000 >> 22] =
+    [memory::KERNBASE >> 22] =
         PageDirEntry::large_page(0x00000000,
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ];
