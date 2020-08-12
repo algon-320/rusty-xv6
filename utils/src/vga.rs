@@ -44,7 +44,7 @@ impl Default for ScreenCell {
     fn default() -> Self {
         Self {
             ascii: b' ',
-            color: DEF_COLOR,
+            color: WHITE,
         }
     }
 }
@@ -159,11 +159,11 @@ impl core::fmt::Write for Writer {
     }
 }
 
-pub const DEF_COLOR: ColorCode = ColorCode::new(Color::White, Color::Black);
-pub const ERR_COLOR: ColorCode = ColorCode::new(Color::LightRed, Color::Black);
-pub const WRN_COLOR: ColorCode = ColorCode::new(Color::Yellow, Color::Black);
-pub const INF_COLOR: ColorCode = ColorCode::new(Color::LightCyan, Color::Black);
-pub const DBG_COLOR: ColorCode = ColorCode::new(Color::LightGreen, Color::Black);
+pub const WHITE: ColorCode = ColorCode::new(Color::White, Color::Black);
+pub const LIGHT_RED: ColorCode = ColorCode::new(Color::LightRed, Color::Black);
+pub const YELLOW: ColorCode = ColorCode::new(Color::Yellow, Color::Black);
+pub const CYAN: ColorCode = ColorCode::new(Color::LightCyan, Color::Black);
+pub const LIGHT_GREEN: ColorCode = ColorCode::new(Color::LightGreen, Color::Black);
 
 use core::fmt::Write;
 use spin::Mutex;
@@ -173,7 +173,7 @@ lazy_static::lazy_static! {
         Writer {
             column_position: 0,
             row_position: 0,
-            color: DEF_COLOR,
+            color: WHITE,
             buffer: {
                 let cells = 0x800B8000 as *mut ScreenCell;
                 for i in 0..HEIGHT * WIDTH {
@@ -196,5 +196,5 @@ pub fn _print_with_color(color: ColorCode, args: core::fmt::Arguments) {
     let mut writer = VGA_WRITER.lock();
     writer.change_color(color);
     writer.write_fmt(args).unwrap();
-    writer.change_color(DEF_COLOR);
+    writer.change_color(WHITE);
 }

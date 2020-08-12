@@ -31,11 +31,11 @@ macro_rules! println {
 
 #[macro_export]
 macro_rules! dbg {
-    () => {$crate::println!($crate::vga::DBG_COLOR; "[{}:{}]", core::file!(), core::line!())};
+    () => {$crate::println!($crate::vga::LIGHT_GREEN; "[{}:{}]", core::file!(), core::line!())};
     ($val:expr) => {
         match $val {
             tmp =>{
-                $crate::println!($crate::vga::DBG_COLOR; "[{}:{}] {} = {:#?}",
+                $crate::println!($crate::vga::LIGHT_GREEN; "[{}:{}] {} = {:#?}",
                     core::file!(), core::line!(), core::stringify!($val), tmp);
                 tmp
             }

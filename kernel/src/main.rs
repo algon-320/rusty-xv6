@@ -4,6 +4,9 @@
 #![feature(global_asm)]
 #![feature(asm)]
 #![feature(start)]
+#![feature(custom_test_frameworks)]
+#![test_runner(test_runner)]
+#![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
 
 extern crate rlibc;
@@ -32,28 +35,51 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ];
 
+#[test_case]
+fn trivial_assertion() {
+    utils::print!("trivial assertion... ");
+    assert_eq!(1, 1);
+    println!("[ok]");
+}
+
 #[no_mangle]
 pub extern "C" fn main() {
-    let msg = "hello, world!";
-    #[derive(Debug)]
-    struct MyStruct {
-        x: i32,
-        y: [u8; 3],
-        z: &'static str,
+    #[cfg(test)]
+    {
+        test_main();
     }
-    let my_st = MyStruct {
-        x: 123,
-        y: [4, 5, 6],
-        z: "789",
-    };
-    dbg!(msg, my_st);
+    #[cfg(not(test))]
+    {
+        let msg = "hello, world!";
+        #[derive(Debug)]
+        struct MyStruct {
+            x: i32,
+            y: [u8; 3],
+            z: &'static str,
+        }
+        let my_st = MyStruct {
+            x: 123,
+            y: [4, 5, 6],
+            z: "789",
+        };
+        dbg!(msg, my_st);
+    }
     todo!()
+}
+
+#[cfg(test)]
+fn test_runner(tests: &[&dyn Fn()]) {
+    println!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
+    println!(utils::vga::LIGHT_GREEN; "all tests passed!");
 }
 
 #[panic_handler]
 #[no_mangle]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!(utils::vga::ERR_COLOR; "{}", info);
+    println!(utils::vga::LIGHT_RED; "{}", info);
     loop {}
 }
 
