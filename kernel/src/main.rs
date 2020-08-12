@@ -13,8 +13,8 @@ extern crate rlibc;
 
 mod memory;
 
+use utils::prelude::*;
 use utils::{assigned_array, x86};
-use utils::{dbg, println};
 
 use memory::pg_dir::{ent_flag, PageDirEntry, NPDENTRIES};
 
@@ -37,7 +37,7 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
 
 #[test_case]
 fn trivial_assertion() {
-    utils::print!("trivial assertion... ");
+    print!("trivial assertion... ");
     assert_eq!(1, 1);
     println!("[ok]");
 }
@@ -50,19 +50,7 @@ pub extern "C" fn main() {
     }
     #[cfg(not(test))]
     {
-        let msg = "hello, world!";
-        #[derive(Debug)]
-        struct MyStruct {
-            x: i32,
-            y: [u8; 3],
-            z: &'static str,
-        }
-        let my_st = MyStruct {
-            x: 123,
-            y: [4, 5, 6],
-            z: "789",
-        };
-        dbg!(msg, my_st);
+        log!("main called!");
     }
     todo!()
 }
@@ -73,13 +61,13 @@ fn test_runner(tests: &[&dyn Fn()]) {
     for test in tests {
         test();
     }
-    println!(utils::vga::LIGHT_GREEN; "all tests passed!");
+    println!(print_color::LIGHT_GREEN; "all tests passed!");
 }
 
 #[panic_handler]
 #[no_mangle]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!(utils::vga::LIGHT_RED; "{}", info);
+    println!(print_color::LIGHT_RED; "{}", info);
     loop {}
 }
 

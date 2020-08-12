@@ -3,7 +3,6 @@ use core::ptr::{read_volatile, write_volatile};
 
 // from: https://os.phil-opp.com/vga-text-mode/
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Color {
@@ -34,6 +33,21 @@ impl ColorCode {
     }
 }
 
+/// fg: White, bg: Black
+pub const WHITE: ColorCode = ColorCode::new(Color::White, Color::Black);
+/// fg: LightRed, bg: Black
+pub const LIGHT_RED: ColorCode = ColorCode::new(Color::LightRed, Color::Black);
+/// fg: Yellow, bg: Black
+pub const YELLOW: ColorCode = ColorCode::new(Color::Yellow, Color::Black);
+/// fg: Cyan, bg: Black
+pub const CYAN: ColorCode = ColorCode::new(Color::LightCyan, Color::Black);
+/// fg: LightGreen, bg: Black
+pub const LIGHT_GREEN: ColorCode = ColorCode::new(Color::LightGreen, Color::Black);
+
+const HEIGHT: usize = 25;
+const WIDTH: usize = 80;
+const CRT_PORT: u16 = 0x3D4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenCell {
@@ -48,9 +62,6 @@ impl Default for ScreenCell {
         }
     }
 }
-const HEIGHT: usize = 25;
-const WIDTH: usize = 80;
-const CRT_PORT: u16 = 0x3D4;
 
 #[repr(transparent)]
 struct Buffer {
@@ -158,12 +169,6 @@ impl core::fmt::Write for Writer {
         Ok(())
     }
 }
-
-pub const WHITE: ColorCode = ColorCode::new(Color::White, Color::Black);
-pub const LIGHT_RED: ColorCode = ColorCode::new(Color::LightRed, Color::Black);
-pub const YELLOW: ColorCode = ColorCode::new(Color::Yellow, Color::Black);
-pub const CYAN: ColorCode = ColorCode::new(Color::LightCyan, Color::Black);
-pub const LIGHT_GREEN: ColorCode = ColorCode::new(Color::LightGreen, Color::Black);
 
 use core::fmt::Write;
 use spin::Mutex;
