@@ -16,8 +16,13 @@ pub type VAddr<T> = Addr<T, PhysicalAddr>;
 
 impl<T, A> Addr<T, A> {
     #[inline]
-    pub const fn from(ptr: *mut T) -> Self {
+    pub fn from(ptr: *mut T) -> Self {
         Self(ptr, PhantomData)
+    }
+    #[inline]
+    pub fn from_raw(raw_addr: usize) -> Self {
+        assert_eq!(raw_addr % core::mem::align_of::<T>(), 0);
+        Self(raw_addr as *mut T, PhantomData)
     }
     #[inline]
     pub fn cast<U>(self) -> Addr<U, A> {
@@ -31,6 +36,10 @@ impl<T, A> Addr<T, A> {
     #[inline]
     pub fn mut_ptr(self) -> *mut T {
         self.0
+    }
+    #[inline]
+    pub fn raw(self) -> usize {
+        self.0 as usize
     }
 }
 
