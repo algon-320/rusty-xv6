@@ -1,5 +1,7 @@
 /// x86 page directory
 pub mod pg_dir {
+    /// Page size
+    pub const PAGE_SIZE: usize = 4096;
     /// # directory entries per page directory
     pub const NPDENTRIES: usize = 1024;
 
@@ -50,6 +52,9 @@ pub mod pg_dir {
 
 /// First kernel virtual address
 pub const KERNBASE: usize = 0x80000000;
+
+// Top physical memory
+pub const PHYSTOP: usize = 0xE000000;
 
 use utils::prelude::*;
 #[inline]

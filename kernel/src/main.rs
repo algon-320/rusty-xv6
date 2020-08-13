@@ -2,7 +2,7 @@
 #![no_main]
 #![feature(lang_items)]
 #![feature(global_asm)]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(start)]
 #![feature(custom_test_frameworks)]
 #![test_runner(test_runner)]
@@ -13,12 +13,14 @@ extern crate rlibc;
 
 mod kalloc;
 mod memory;
+mod proc;
+mod spinlock;
 
 use utils::prelude::*;
 use utils::{assigned_array, x86};
 
+use memory::p2v;
 use memory::pg_dir::{ent_flag, PageDirEntry, NPDENTRIES};
-use memory::{p2v, v2p};
 
 #[used] // must not be removed
 #[no_mangle]
@@ -37,11 +39,9 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ];
 
-#[test_case]
-fn trivial_assertion() {
-    print!("trivial assertion... ");
-    assert_eq!(1, 1);
-    println!("[ok]");
+extern "C" {
+    ///  first address after kernel loaded from ELF file
+    static kernel_end: core::ffi::c_void;
 }
 
 #[no_mangle]
@@ -52,10 +52,54 @@ pub extern "C" fn main() {
     }
     #[cfg(not(test))]
     {
-        log!("main called!");
-        kalloc::init1();
+        let mut _kmem = {
+            let kernel_end_addr = VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize);
+            let heap_end = p2v(PAddr::from_raw(4 * 1024 * 1024));
+            kalloc::Kmem::init1(kernel_end_addr, heap_end)
+        };
     }
     todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test_case]
+    fn address_round_up() {
+        let addr: PAddr<u8> = PAddr::from_raw(20).round_up(4096);
+        let expected = PAddr::from_raw(4096);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(4096).round_up(4096);
+        let expected = PAddr::from_raw(4096);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(0usize.wrapping_sub(1)).round_up(4096);
+        let expected = PAddr::from_raw(0);
+        assert_eq!(addr, expected);
+    }
+    #[test_case]
+    fn address_round_down() {
+        let addr: PAddr<u8> = PAddr::from_raw(20).round_down(4096);
+        let expected = PAddr::from_raw(0);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(4100).round_down(4096);
+        let expected = PAddr::from_raw(4096);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(0).round_down(4096);
+        let expected = PAddr::from_raw(0);
+        assert_eq!(addr, expected);
+    }
+
+    #[test_case]
+    fn x86_xchg() {
+        let mut x = 123u32;
+        let y = x86::xchgl(&mut x, 456u32);
+        assert_eq!(y, 123);
+        assert_eq!(x, 456);
+    }
 }
 
 #[cfg(test)]

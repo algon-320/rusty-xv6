@@ -92,6 +92,59 @@ pub fn stosl(addr: *const u8, data: u32, cnt: usize) {
     }
 }
 
+/// write new_val to addr and return the old value
+#[inline]
+pub fn xchgl(addr: *mut u32, new_val: u32) -> u32 {
+    let mut result;
+    unsafe {
+        llvm_asm!("lock; xchgl $0, $1"
+            : "+*m"(addr), "={eax}"(result)
+            : "1"(new_val)
+            : "cc"
+            : "volatile");
+    }
+    result
+}
+
+/// Return eflags
+#[inline]
+pub fn read_eflags() -> u32 {
+    let mut eflags;
+    unsafe {
+        llvm_asm!("pushfl; popl $0"
+            : "=r"(eflags)
+            :
+            :
+            : "volatile");
+    }
+    eflags
+}
+
+#[inline]
+pub fn cli() {
+    unsafe {
+        llvm_asm!("cli"::::"volatile");
+    }
+}
+#[inline]
+pub fn sti() {
+    unsafe {
+        llvm_asm!("sti"::::"volatile");
+    }
+}
+
+/// write 0 to the memory specified by addr
+#[inline]
+pub fn movl0(addr: *mut u32) {
+    unsafe {
+        llvm_asm!("movl $$0, $0"
+            : "+*m"(addr)
+            :
+            :
+            : "volatile");
+    }
+}
+
 /// do nothing
 #[inline]
 pub fn nop() {
@@ -99,3 +152,5 @@ pub fn nop() {
         llvm_asm!("nop");
     }
 }
+
+pub const FL_IF: u32 = 0x00000200;
