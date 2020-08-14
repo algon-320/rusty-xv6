@@ -59,7 +59,7 @@ fn free_range(start: VAddr<u8>, end: VAddr<u8>) {
     let mut page = page.cast::<Page>();
     let mut avail_page = 0;
     while (page + 1).cast() < end {
-        kfree(page);
+        kfree(page.mut_ptr());
         page += 1;
         avail_page += 1;
     }
@@ -69,20 +69,20 @@ fn free_range(start: VAddr<u8>, end: VAddr<u8>) {
 /// Free the page of physical memory pointed at by page,
 /// which normally should have been returned by a call to kalloc().
 /// (The exception is when initializing the allocator; see init above.)
-pub fn kfree(page: VAddr<Page>) {
+pub fn kfree(page: *mut Page) {
     extern "C" {
         ///  first address after kernel loaded from ELF file
         static kernel_end: core::ffi::c_void;
     }
     let end = unsafe { &kernel_end as *const _ as usize };
-    assert!(page.raw() >= end);
-    assert!(v2p(page) < memory::PHYSTOP);
+    assert!(page as usize >= end);
+    assert!(v2p(VAddr::from(page)) < memory::PHYSTOP);
 
     // Fill with junk to catch dangling refs
-    unsafe { rlibc::memset(page.cast().mut_ptr(), 1, PAGE_SIZE) };
+    unsafe { rlibc::memset(page as *mut u8, 1, PAGE_SIZE) };
 
     KMEM.with(|free_list| {
-        let r: *mut Run = page.cast().mut_ptr();
+        let r = page as *mut Run;
         unsafe { (*r).next = *free_list };
         *free_list = r;
     });
@@ -90,15 +90,16 @@ pub fn kfree(page: VAddr<Page>) {
 
 /// Allocate one 4096-byte page of physical memory.
 /// Returns a pointer that the kernel can use.
-/// Returns 0 if the memory cannot be allocated.
-pub fn kalloc() -> VAddr<Page> {
+/// Returns None if the memory cannot be allocated.
+pub fn kalloc() -> Option<*mut Page> {
     KMEM.with(|free_list| {
         let r = *free_list;
         if !r.is_null() {
             unsafe { *free_list = (*r).next };
+            Some(r as *mut Page)
         } else {
             log!("kalloc failed: returning null");
+            None
         }
-        VAddr::from(r as *mut _)
     })
 }
