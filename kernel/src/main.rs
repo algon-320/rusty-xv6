@@ -16,6 +16,7 @@ mod kalloc;
 mod memory;
 mod proc;
 mod spinlock;
+mod vm;
 
 use utils::prelude::*;
 use utils::{assigned_array, x86};
@@ -60,6 +61,7 @@ pub extern "C" fn main() {
             let heap_end = p2v(PAddr::from_raw(4 * 1024 * 1024));
             kalloc::init1(kernel_end_addr, heap_end);
         };
+        vm::kvmalloc();
     }
     todo!()
 }
