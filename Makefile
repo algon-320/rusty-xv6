@@ -10,6 +10,9 @@ KERNEL_BIN := $(OUT_DIR)/kernel
 KERNEL_DEPS := kernel/Cargo.toml kernel/kernel.ld kernel/src/* utils/src/*
 
 IMAGE := $(OUT_DIR)/xv6.img
+
+GDB_PORT := $(shell expr `id -u` % 5000 + 25000)
+GDB_EXTERN_TERM := gnome-terminal -x
 #===============================================================================
 
 .PHONY: qemu
@@ -17,6 +20,13 @@ qemu: build-image
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
     -smp 2 -m 512 -serial mon:stdio
+
+.PHONY: gdb
+gdb: build-image
+	qemu-system-i386\
+    -drive file=$(IMAGE),index=0,media=disk,format=raw\
+    -smp 2 -m 512 -S -gdb tcp::$(GDB_PORT) & \
+    $(GDB_EXTERN_TERM) gdb $(KERNEL_BIN) -ex "target remote localhost:$(GDB_PORT)"
 
 $(BOOTLOADER_BIN): $(BOOTLOADER_DEPS)
 	cd bootloader; cargo build --release
