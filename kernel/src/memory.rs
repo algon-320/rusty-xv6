@@ -1,13 +1,35 @@
 /// x86 page directory
 pub mod pg_dir {
-    /// Page size
-    pub const PAGE_SIZE: usize = 4096;
+    use utils::address::{PAddr, VAddr};
+
     /// # directory entries per page directory
     pub const NPDENTRIES: usize = 1024;
+    /// # PTEs per page table
+    pub const NPTENTRIES: usize = 1024;
+
+    pub type PageDirectory = [PageDirEntry; NPDENTRIES];
+    pub type PageTable = [PageTableEntry; NPTENTRIES];
 
     #[derive(Clone, Copy)]
     #[repr(transparent)]
     pub struct PageDirEntry(u32);
+
+    // A virtual address 'va' has a three-part structure as follows:
+    //
+    // +--------10------+-------10-------+---------12----------+
+    // | Page Directory |   Page Table   | Offset within Page  |
+    // |      Index     |      Index     |                     |
+    // +----------------+----------------+---------------------+
+    //  \--- PDX(va) --/ \--- PTX(va) --/
+
+    #[inline]
+    pub fn PDX<T>(va: VAddr<T>) -> usize {
+        (va.raw() >> 22) & 0x3FF
+    }
+    #[inline]
+    pub fn PTX<T>(va: VAddr<T>) -> usize {
+        (va.raw() >> 12) & 0x3FF
+    }
 
     /// Quoted from https://wiki.osdev.org/Paging
     #[allow(dead_code)]
@@ -43,27 +65,61 @@ pub mod pg_dir {
         pub const fn zero() -> Self {
             Self(0)
         }
+        #[inline]
+        pub fn addr(self) -> PAddr<PageTable> {
+            PAddr::from_raw((self.0 & !0xFFF) as usize)
+        }
+        #[inline]
+        pub fn flags(self) -> u32 {
+            self.0 & 0xFFF
+        }
+        #[inline]
+        pub fn flags_check(self, mask: u32) -> bool {
+            (self.0 & 0xFFF & mask) == mask
+        }
     }
 
     #[derive(Clone, Copy)]
     #[repr(transparent)]
     pub struct PageTableEntry(u32);
+
+    impl PageTableEntry {
+        #[inline]
+        pub fn addr(self) -> PAddr<super::Page> {
+            PAddr::from_raw((self.0 & !0xFFFu32) as usize)
+        }
+        #[inline]
+        pub fn flags(self) -> u32 {
+            self.0 & 0xFFF
+        }
+    }
 }
 
-/// First kernel virtual address
-pub const KERNBASE: usize = 0x80000000;
+pub type Page = [u8; PAGE_SIZE];
 
-// Top physical memory
-pub const PHYSTOP: usize = 0xE000000;
+/// Page size
+pub const PAGE_SIZE: usize = 4096;
+
+/// First kernel virtual address
+pub const KERNBASE: VAddr<Page> = unsafe { VAddr::from_raw_unchecked(0x80000000) };
+/// Address where kernel is linked (KERNBASE + EXTMEM)
+pub const KERNLINK: VAddr<Page> = unsafe { VAddr::from_raw_unchecked(0x80100000) };
+
+/// Start of extended memory
+pub const EXTMEM: PAddr<Page> = unsafe { PAddr::from_raw_unchecked(0x100000) };
+/// Top physical memory
+pub const PHYSTOP: PAddr<Page> = unsafe { PAddr::from_raw_unchecked(0xE000000) };
+/// Other devices are at high addresses
+pub const DEVSPACE: VAddr<Page> = unsafe { VAddr::from_raw_unchecked(0xFE000000) };
 
 use utils::prelude::*;
 #[inline]
-pub fn p2v<T>(pa: PAddr<T>) -> VAddr<T> {
+pub const fn p2v<T>(pa: PAddr<T>) -> VAddr<T> {
     let raw = pa.raw();
-    VAddr::from((raw + KERNBASE) as *mut _)
+    unsafe { VAddr::from_raw_unchecked(raw + KERNBASE.raw()) }
 }
 #[inline]
-pub fn v2p<T>(pa: VAddr<T>) -> PAddr<T> {
+pub const fn v2p<T>(pa: VAddr<T>) -> PAddr<T> {
     let raw = pa.raw();
-    VAddr::from((raw - KERNBASE) as *mut _)
+    unsafe { PAddr::from_raw_unchecked(raw - KERNBASE.raw()) }
 }

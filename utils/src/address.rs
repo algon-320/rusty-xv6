@@ -3,7 +3,7 @@ use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
-pub struct Addr<T, A>(*mut T, PhantomData<A>);
+pub struct Addr<T, A>(usize, PhantomData<(T, A)>);
 // it is guaranteed that the size of this is the same as pointer type.
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -12,17 +12,18 @@ pub enum PhysicalAddr {}
 pub enum VirtualAddr {}
 
 pub type PAddr<T> = Addr<T, PhysicalAddr>;
-pub type VAddr<T> = Addr<T, PhysicalAddr>;
+pub type VAddr<T> = Addr<T, VirtualAddr>;
 
 impl<T, A> Addr<T, A> {
     #[inline]
-    pub fn from(ptr: *mut T) -> Self {
+    pub fn from(ptr: *const T) -> Self {
+        let addr = ptr as usize;
         debug_assert_eq!(
-            (ptr as usize) % core::mem::align_of::<T>(),
+            addr % core::mem::align_of::<T>(),
             0,
             "address must be aligned properly"
         );
-        Self(ptr, PhantomData)
+        Self(addr, PhantomData)
     }
     #[inline]
     pub fn from_raw(raw_addr: usize) -> Self {
@@ -31,7 +32,13 @@ impl<T, A> Addr<T, A> {
             0,
             "address must be aligned properly"
         );
-        Self(raw_addr as *mut T, PhantomData)
+        Self(raw_addr, PhantomData)
+    }
+    /// ## Safety
+    /// `raw_addr` must be properly aligned.
+    #[inline]
+    pub const unsafe fn from_raw_unchecked(raw_addr: usize) -> Self {
+        Self(raw_addr, PhantomData)
     }
     #[inline]
     pub fn cast<U>(self) -> Addr<U, A> {
@@ -44,20 +51,20 @@ impl<T, A> Addr<T, A> {
     }
     #[inline]
     pub fn ptr(self) -> *const T {
-        self.0
+        self.0 as *const T
     }
     #[inline]
     pub fn mut_ptr(self) -> *mut T {
-        self.0
+        self.0 as *mut T
     }
     #[inline]
-    pub fn raw(self) -> usize {
-        self.0 as usize
+    pub const fn raw(self) -> usize {
+        self.0
     }
 
     #[inline]
     pub fn is_null(&self) -> bool {
-        self.0.is_null()
+        self.ptr().is_null()
     }
 
     #[inline]
@@ -86,7 +93,7 @@ impl<T, A> Addr<T, A> {
 impl<T, A> Add<usize> for Addr<T, A> {
     type Output = Self;
     fn add(self, offset: usize) -> Self::Output {
-        Self::from(unsafe { self.0.add(offset) })
+        Self::from(unsafe { self.ptr().add(offset) })
     }
 }
 impl<T, A> AddAssign<usize> for Addr<T, A> {
@@ -97,7 +104,7 @@ impl<T, A> AddAssign<usize> for Addr<T, A> {
 impl<T, A> Sub<usize> for Addr<T, A> {
     type Output = Self;
     fn sub(self, offset: usize) -> Self::Output {
-        Self::from(unsafe { self.0.sub(offset) })
+        Self::from(unsafe { self.ptr().sub(offset) })
     }
 }
 impl<T, A> SubAssign<usize> for Addr<T, A> {
@@ -108,7 +115,7 @@ impl<T, A> SubAssign<usize> for Addr<T, A> {
 
 impl<T, A> Clone for Addr<T, A> {
     fn clone(&self) -> Self {
-        Self::from(self.0)
+        Self::from_raw(self.0)
     }
 }
 impl<T, A> Copy for Addr<T, A> {}

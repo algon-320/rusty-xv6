@@ -1,5 +1,7 @@
 #![no_std]
 #![feature(llvm_asm)]
+#![feature(const_fn)]
+#![feature(const_raw_ptr_to_usize_cast)]
 #![allow(clippy::identity_op)]
 
 pub mod address;
@@ -58,12 +60,12 @@ macro_rules! dbg {
 macro_rules! log {
     () => {
         $crate::println!(
-            $crate::print_color::CYAN;
+            $crate::print_color::WHITE;
             "[{}:{}]", core::file!(), core::line!())
     };
     ($($arg:tt)*) => {
         $crate::println!(
-            $crate::print_color::CYAN;
+            $crate::print_color::WHITE;
             "[{}:{}] {}", core::file!(), core::line!(), format_args!($($arg)*))
     };
 }

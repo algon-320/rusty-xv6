@@ -5,6 +5,7 @@
 #![feature(llvm_asm)]
 #![feature(start)]
 #![feature(custom_test_frameworks)]
+#![feature(const_raw_ptr_to_usize_cast)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
@@ -34,7 +35,7 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
                 ent_flag::WRITABLE | ent_flag::PRESENT),
 
     // Map VA's [KERNBASE, KERNBASE + 4MB) to PA's [0, 4MB)
-    [memory::KERNBASE >> 22] =
+    [memory::KERNBASE.raw() >> 22] =
         PageDirEntry::large_page(0x00000000,
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ];
@@ -52,10 +53,10 @@ pub extern "C" fn main() {
     }
     #[cfg(not(test))]
     {
-        let mut _kmem = {
+        {
             let kernel_end_addr = VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize);
             let heap_end = p2v(PAddr::from_raw(4 * 1024 * 1024));
-            kalloc::Kmem::init1(kernel_end_addr, heap_end)
+            kalloc::init1(kernel_end_addr, heap_end);
         };
     }
     todo!()
