@@ -41,9 +41,14 @@ impl<T, A> Addr<T, A> {
         Self(raw_addr, PhantomData)
     }
     #[inline]
+    pub const fn null() -> Self {
+        Self(0, PhantomData)
+    }
+
+    #[inline]
     pub fn cast<U>(self) -> Addr<U, A> {
         debug_assert_eq!(
-            (self.0 as usize) % core::mem::align_of::<U>(),
+            self.0 % core::mem::align_of::<U>(),
             0,
             "address must be aligned properly"
         );
@@ -115,7 +120,7 @@ impl<T, A> SubAssign<usize> for Addr<T, A> {
 
 impl<T, A> Clone for Addr<T, A> {
     fn clone(&self) -> Self {
-        Self::from_raw(self.0)
+        *self
     }
 }
 impl<T, A> Copy for Addr<T, A> {}
