@@ -14,6 +14,13 @@ pub mod pg_dir {
     #[repr(transparent)]
     pub struct PageDirEntry(u32);
 
+    #[derive(Clone, Copy)]
+    #[repr(transparent)]
+    pub struct PageTableEntry(u32);
+
+    const DIR_ENT_FLAG_MASK: u32 = 0b111110111111;
+    const TAB_ENT_FLAG_MASK: u32 = 0b111101111111;
+
     // A virtual address 'va' has a three-part structure as follows:
     //
     // +--------10------+-------10-------+---------12----------+
@@ -23,12 +30,68 @@ pub mod pg_dir {
     //  \--- PDX(va) --/ \--- PTX(va) --/
 
     #[inline]
-    pub fn PDX<T>(va: VAddr<T>) -> usize {
+    pub fn pdx<T>(va: VAddr<T>) -> usize {
         (va.raw() >> 22) & 0x3FF
     }
     #[inline]
-    pub fn PTX<T>(va: VAddr<T>) -> usize {
+    pub fn ptx<T>(va: VAddr<T>) -> usize {
         (va.raw() >> 12) & 0x3FF
+    }
+
+    impl PageDirEntry {
+        /// Creates new entry.
+        /// `page_table_addr` must be 4KiB aligned (lower 12 bit must be zero)
+        pub const fn new_table(page_table_addr: u32, flags: u32) -> Self {
+            Self(page_table_addr | flags & DIR_ENT_FLAG_MASK)
+        }
+        /// Creates new entry (direct address of 4MiB page).
+        /// `page_table_addr` must be 4MiB aligned (lower 22 bit must be zero)
+        pub const fn new_large_page(page_addr: PAddr<super::Page>, flags: u32) -> Self {
+            Self(page_addr.raw() as u32 | ent_flag::PAGE_SIZE_4MIB | flags & DIR_ENT_FLAG_MASK)
+        }
+        pub const fn zero() -> Self {
+            Self(0)
+        }
+
+        #[inline]
+        pub fn set_flags(&mut self, flags: u32) {
+            self.0 |= flags & DIR_ENT_FLAG_MASK;
+        }
+        #[inline]
+        pub fn addr(self) -> PAddr<PageTable> {
+            PAddr::from_raw((self.0 & !DIR_ENT_FLAG_MASK) as usize)
+        }
+        #[inline]
+        pub fn flags(self) -> u32 {
+            self.0 & DIR_ENT_FLAG_MASK
+        }
+        #[inline]
+        pub fn flags_check(self, mask: u32) -> bool {
+            (self.0 & DIR_ENT_FLAG_MASK & mask) == mask
+        }
+    }
+
+    impl PageTableEntry {
+        #[inline]
+        pub fn new(page_addr: PAddr<super::Page>, flags: u32) -> Self {
+            Self(page_addr.raw() as u32 | flags & TAB_ENT_FLAG_MASK)
+        }
+        #[inline]
+        pub fn set_flags(&mut self, flags: u32) {
+            self.0 |= flags & TAB_ENT_FLAG_MASK;
+        }
+        #[inline]
+        pub fn addr(self) -> PAddr<super::Page> {
+            PAddr::from_raw((self.0 & !TAB_ENT_FLAG_MASK) as usize)
+        }
+        #[inline]
+        pub fn flags(self) -> u32 {
+            self.0 & TAB_ENT_FLAG_MASK
+        }
+        #[inline]
+        pub fn flags_check(self, mask: u32) -> bool {
+            (self.0 & TAB_ENT_FLAG_MASK & mask) == mask
+        }
     }
 
     /// Quoted from https://wiki.osdev.org/Paging
@@ -49,49 +112,6 @@ pub mod pg_dir {
         pub const WRITABLE: u32 = 0b000000000010;
         /// If the bit is set, the page is actually in physical memory at the moment.
         pub const PRESENT: u32 = 0b000000000001;
-    }
-
-    impl PageDirEntry {
-        /// Creates new entry.
-        /// `page_table_addr` must be 4KiB aligned (lower 12 bit must be zero)
-        pub const fn table_ref(page_table_addr: u32, flags: u32) -> Self {
-            Self(page_table_addr | flags)
-        }
-        /// Creates new entry (direct address of 4MiB page).
-        /// `page_table_addr` must be 4MiB aligned (lower 22 bit must be zero)
-        pub const fn large_page(page_addr: u32, flags: u32) -> Self {
-            Self(page_addr | ent_flag::PAGE_SIZE_4MIB | flags)
-        }
-        pub const fn zero() -> Self {
-            Self(0)
-        }
-        #[inline]
-        pub fn addr(self) -> PAddr<PageTable> {
-            PAddr::from_raw((self.0 & !0xFFF) as usize)
-        }
-        #[inline]
-        pub fn flags(self) -> u32 {
-            self.0 & 0xFFF
-        }
-        #[inline]
-        pub fn flags_check(self, mask: u32) -> bool {
-            (self.0 & 0xFFF & mask) == mask
-        }
-    }
-
-    #[derive(Clone, Copy)]
-    #[repr(transparent)]
-    pub struct PageTableEntry(u32);
-
-    impl PageTableEntry {
-        #[inline]
-        pub fn addr(self) -> PAddr<super::Page> {
-            PAddr::from_raw((self.0 & !0xFFFu32) as usize)
-        }
-        #[inline]
-        pub fn flags(self) -> u32 {
-            self.0 & 0xFFF
-        }
     }
 }
 

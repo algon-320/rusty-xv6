@@ -31,12 +31,14 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
 
     // Map VA's [0, 4MB) to PA's [0, 4MB)
     [0] =
-        PageDirEntry::large_page(0x00000000,
+        PageDirEntry::new_large_page(
+                unsafe { PAddr::from_raw_unchecked(0x00000000) },
                 ent_flag::WRITABLE | ent_flag::PRESENT),
 
     // Map VA's [KERNBASE, KERNBASE + 4MB) to PA's [0, 4MB)
     [memory::KERNBASE.raw() >> 22] =
-        PageDirEntry::large_page(0x00000000,
+        PageDirEntry::new_large_page(
+                unsafe { PAddr::from_raw_unchecked(0x00000000) },
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ];
 
