@@ -5,15 +5,14 @@
 #![feature(llvm_asm)]
 #![feature(start)]
 
-use utils::{address, x86};
+use utils::x86;
 mod elf;
-use address::PAddr;
 
 const SECTOR_SIZE: usize = 512;
 type Sector = [u8; SECTOR_SIZE];
 
 /// Read a single sector at offset into dst.
-fn read_sector(dst: PAddr<Sector>, offset: usize) {
+fn read_sector(dst: *mut Sector, offset: usize) {
     fn wait_disk() {
         // Wait for disk ready
         while (x86::inb(0x01F7) & 0xC0) != 0x40 {
@@ -31,49 +30,50 @@ fn read_sector(dst: PAddr<Sector>, offset: usize) {
 
     // Read the data.
     wait_disk();
-    x86::insl(0x01F0, dst.cast().mut_ptr(), SECTOR_SIZE / 4);
+    x86::insl(0x01F0, dst as *mut u32, SECTOR_SIZE / 4);
 }
 
 /// Read 'count' bytes at 'offset' from kernel into physical address 'pa'.
 /// Might copy more than asked.
-fn read_segment(pa: PAddr<u8>, count: usize, offset: usize) {
-    let end_pa = pa + count;
-    let pa = pa - (offset % SECTOR_SIZE);
+unsafe fn read_segment(pa: *mut u8, count: usize, offset: usize) {
+    let end_pa = pa.add(count);
+    let pa = pa.sub(offset % SECTOR_SIZE);
+    let mut pa = pa as *mut Sector;
 
-    let mut pa: PAddr<Sector> = pa.cast();
     let mut offset = (offset / SECTOR_SIZE) + 1;
     while pa.cast() < end_pa {
         read_sector(pa, offset);
-        pa += 1;
+        pa = pa.add(1);
         offset += 1;
     }
 }
 
 #[no_mangle]
 fn boot_main() {
-    let elf_addr = PAddr::from(0x00010000 as *mut elf::ElfHeader);
-    let elf = unsafe { elf_addr.ptr().as_ref().unwrap() };
+    let elf = 0x00010000 as *mut elf::ElfHeader;
 
-    // Read first page of disk
-    read_segment(elf_addr.cast(), 4096, 0);
+    unsafe {
+        // Read first page of disk
+        read_segment(elf as *mut u8, 4096, 0);
 
-    // Is this an ELF executable?
-    if !elf.verify() {
-        return;
-    }
-
-    // Load each program segment (ignores ph flags).
-    for ph in elf.prog_headers() {
-        let pa = PAddr::from(ph.p_paddr);
-        read_segment(pa, ph.p_filesz, ph.p_offset);
-        if ph.p_memsz > ph.p_filesz {
-            // fill with zero
-            x86::stosb((pa + ph.p_filesz).ptr(), 0, ph.p_memsz - ph.p_filesz);
+        // Is this an ELF executable?
+        if !(*elf).verify() {
+            return;
         }
-    }
 
-    // Go to kernel
-    (elf.e_entry)();
+        // Load each program segment (ignores ph flags).
+        for ph in (*elf).prog_headers() {
+            let pa = ph.p_paddr;
+            read_segment(pa, ph.p_filesz, ph.p_offset);
+            if ph.p_memsz > ph.p_filesz {
+                // fill with zero
+                x86::stosb(pa.add(ph.p_filesz), 0, ph.p_memsz - ph.p_filesz);
+            }
+        }
+
+        // Go to kernel
+        ((*elf).e_entry)();
+    }
 }
 
 #[panic_handler]
