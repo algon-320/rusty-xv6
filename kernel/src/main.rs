@@ -14,6 +14,7 @@ extern crate rlibc;
 
 mod kalloc;
 mod memory;
+mod mp;
 mod proc;
 mod spinlock;
 mod vm;
@@ -62,6 +63,7 @@ pub extern "C" fn main() {
             kalloc::init1(kernel_end_addr, heap_end);
         };
         vm::kvmalloc();
+        mp::init();
     }
     todo!()
 }
