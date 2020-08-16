@@ -145,6 +145,17 @@ pub fn movl0(addr: *mut u32) {
     }
 }
 
+#[inline]
+pub fn lcr3(val: u32) {
+    unsafe {
+        llvm_asm!("movl $0, %cr3"
+            :
+            : "r"(val)
+            :
+            : "volatile");
+    }
+}
+
 /// do nothing
 #[inline]
 pub fn nop() {

@@ -5,6 +5,7 @@ use super::memory::pg_dir::{
 use super::memory::{p2v, v2p, Page};
 use super::memory::{DEVSPACE, EXTMEM, KERNBASE, KERNLINK, PAGE_SIZE, PHYSTOP};
 use utils::prelude::*;
+use utils::x86;
 
 struct Kmap {
     virt: VAddr<Page>,
@@ -151,6 +152,14 @@ pub fn kvmalloc() {
         let mut guard = KPG_DIR.lock();
         *guard = kpg_dir;
     }
+    // Now, we switch the page table from entry_page_dir to kpg_dir
+    switch_kvm();
+}
+
+fn switch_kvm() {
+    let guard = KPG_DIR.lock();
+    let kpg_dir = VAddr::from(*guard);
+    x86::lcr3(v2p(kpg_dir).raw() as u32);
 }
 
 /// Deallocate user pages to bring the process size from old_sz to
