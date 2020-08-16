@@ -6,6 +6,7 @@
 #![feature(start)]
 #![feature(custom_test_frameworks)]
 #![feature(const_raw_ptr_to_usize_cast)]
+#![feature(ptr_offset_from)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
@@ -66,6 +67,7 @@ pub extern "C" fn main() {
         vm::kvmalloc();
         mp::init();
         lapic::init();
+        vm::seginit();
     }
     todo!()
 }

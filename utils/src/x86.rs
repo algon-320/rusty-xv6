@@ -1,3 +1,9 @@
+/// Eflags register
+pub mod eflags {
+    /// Interrupt Enable
+    pub const FL_IF: u32 = 0x00000200;
+}
+
 /// read a byte from the port
 #[inline]
 pub fn inb(port: u16) -> u8 {
@@ -151,6 +157,22 @@ pub fn lcr3(val: u32) {
         llvm_asm!("movl $0, %cr3"
             :
             : "r"(val)
+            :
+            : "volatile");
+    }
+}
+
+#[inline]
+pub fn lgdt(seg_desc: *const u8, sz: u16) {
+    let pd: [u16; 3] = [
+        sz - 1,
+        seg_desc as usize as u16,
+        (seg_desc as usize).wrapping_shr(16) as u16,
+    ];
+    unsafe {
+        llvm_asm!("lgdt ($0)"
+            :
+            : "r"(pd.as_ptr())
             :
             : "volatile");
     }

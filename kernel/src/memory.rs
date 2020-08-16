@@ -118,6 +118,111 @@ pub mod pg_dir {
     }
 }
 
+pub mod seg {
+    // various segment selectors.
+    /// kernel code
+    pub const SEG_KCODE: usize = 1;
+    /// kernel data+stack
+    pub const SEG_KDATA: usize = 2;
+    /// user code
+    pub const SEG_UCODE: usize = 3;
+    /// user data+stack
+    pub const SEG_UDATA: usize = 4;
+    /// this process's task state
+    pub const SEG_TSS: usize = 5;
+    /// CPU.gdt[SegDesc; NSEGS]; holds the above segments
+    pub const NSEGS: usize = 6;
+
+    /// GDT initial value
+    pub const GDT_ZERO: [SegDesc; NSEGS] = [
+        SegDesc::new(),
+        SegDesc::new(),
+        SegDesc::new(),
+        SegDesc::new(),
+        SegDesc::new(),
+        SegDesc::new(),
+    ];
+
+    pub mod seg_type {
+        // Application segment type bits
+
+        /// Executable segment
+        pub const STA_X: u8 = 0x8;
+        /// Writeable (non-executable segments)
+        pub const STA_W: u8 = 0x2;
+        /// Readable (executable segments)
+        pub const STA_R: u8 = 0x2;
+
+        // System segment type bits
+
+        /// Available 32-bit TSS
+        pub const STS_T32A: u8 = 0x9;
+        /// 32-bit Interrupt Gate
+        pub const STS_IG32: u8 = 0xE;
+        /// 32-bit Trap Gate
+        pub const STS_TG32: u8 = 0xF;
+    }
+
+    pub mod dpl {
+        /// Ring-3 (User DPL)
+        pub const USER: u8 = 0x3;
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    #[repr(C)]
+    pub struct SegDesc {
+        f1: u32,
+        f2: u32,
+    }
+    impl SegDesc {
+        #[inline]
+        pub const fn new() -> Self {
+            Self { f1: 0, f2: 0 }
+        }
+        #[inline]
+        pub const fn from_raw(f1: u32, f2: u32) -> Self {
+            Self { f1, f2 }
+        }
+        #[inline]
+        pub const fn set_lim(mut self, limit: u32) -> Self {
+            let lim_00_15 = limit & 0x0000FFFF;
+            let lim_16_19 = limit & 0x000F0000;
+            self.f1 = (self.f1 & 0xFFFF0000) | lim_00_15;
+            self.f2 = (self.f2 & 0xFFF0FFFF) | lim_16_19;
+            self
+        }
+        #[inline]
+        pub const fn set_base(mut self, base: u32) -> Self {
+            let base_00_15 = base & 0x0000FFFF;
+            let base_16_23 = base & 0x00FF0000;
+            let base_24_31 = base & 0xFF000000;
+            self.f1 = (self.f1 & 0x0000FFFF) | (base_00_15 << 16);
+            self.f2 = (self.f2 & 0x00FFFF00) | base_24_31 | (base_16_23 >> 16);
+            self
+        }
+        #[inline]
+        pub const fn set_flags(mut self, flags: u8) -> Self {
+            let flags = (flags & 0xF0) as u32; // [gr, sz, 0, 0]
+            self.f2 = (self.f2 & 0xFF0FFFFF) | (flags << 20);
+            self
+        }
+        #[inline]
+        pub const fn set_access_byte(mut self, access: u8) -> Self {
+            self.f2 = (self.f2 & 0xFFFF00FF) | ((access as u32) << 8);
+            self
+        }
+
+        #[inline]
+        pub const fn seg(ty: u8, base: u32, lim: u32, dpl: u8) -> Self {
+            Self::new()
+                .set_base(base)
+                .set_lim(lim)
+                .set_access_byte(0b10010000 | ((dpl & 0b11) << 5) | ty)
+                .set_flags(0b1100)
+        }
+    }
+}
+
 pub type Page = [u8; PAGE_SIZE];
 
 /// Page size

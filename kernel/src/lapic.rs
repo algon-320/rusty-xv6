@@ -138,3 +138,8 @@ pub fn init() {
         LapicReg::TPR.write(0);
     }
 }
+
+pub fn lapic_id() -> Option<u8> {
+    unsafe { LAPIC? };
+    Some(((unsafe { LapicReg::ID.read() } >> 24) & 0xFF) as u8)
+}

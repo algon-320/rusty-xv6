@@ -14,6 +14,27 @@ struct Kmap {
     perm: u32,
 }
 
+/// Set up CPU's kernel segment descriptors.
+/// Run once on entry on each CPU.
+pub fn seginit() {
+    use super::memory::seg::*;
+
+    // Map "logical" addresses to virtual addresses using identity map.
+    // Cannot share a CODE descriptor for both kernel and user
+    // because it would have to have dpl::USER,
+    // but the CPU forbids an interrupt from CPL=0 to DPL=3.
+    let c = super::proc::my_cpu();
+    c.gdt[SEG_KCODE] = SegDesc::seg(seg_type::STA_X | seg_type::STA_R, 0, 0xFFFFFFFF, 0);
+    c.gdt[SEG_KDATA] = SegDesc::seg(seg_type::STA_W, 0, 0xFFFFFFFF, 0);
+    c.gdt[SEG_UCODE] = SegDesc::seg(seg_type::STA_X | seg_type::STA_R, 0, 0xFFFFFFFF, dpl::USER);
+    c.gdt[SEG_UDATA] = SegDesc::seg(seg_type::STA_W, 0, 0xFFFFFFFF, dpl::USER);
+    x86::lgdt(
+        c.gdt.as_ptr() as *const u8,
+        core::mem::size_of_val(&c.gdt) as u16,
+    );
+    dbg!(c.gdt.as_ptr());
+}
+
 // Return the reference of the PTE in page table pg_dir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
@@ -142,23 +163,17 @@ fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
     Some(pg_dir)
 }
 
-use super::spinlock::SpinMutex;
-static KPG_DIR: SpinMutex<*mut PageDirectory> = SpinMutex::new("kpgdir", core::ptr::null_mut());
+static mut KPG_DIR: *mut PageDirectory = core::ptr::null_mut();
 /// Allocate one page table for the machine for the kernel address
 /// space for scheduler processes.
 pub fn kvmalloc() {
-    let kpg_dir = setup_kvm().expect("kvmalloc failed");
-    {
-        let mut guard = KPG_DIR.lock();
-        *guard = kpg_dir;
-    }
+    unsafe { KPG_DIR = setup_kvm().expect("kvmalloc failed") };
     // Now, we switch the page table from entry_page_dir to kpg_dir
     switch_kvm();
 }
 
 fn switch_kvm() {
-    let guard = KPG_DIR.lock();
-    let kpg_dir = VAddr::from(*guard);
+    let kpg_dir = unsafe { VAddr::from(KPG_DIR) };
     x86::lcr3(v2p(kpg_dir).raw() as u32);
 }
 

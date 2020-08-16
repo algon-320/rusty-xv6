@@ -120,9 +120,6 @@ struct MpIoApic {
     addr: *mut u32,
 }
 
-/// maximum number of CPUs
-const MAX_NCPU: usize = 8;
-
 /// sum up given bytes
 unsafe fn sum(p: *const u8, len: usize) -> u8 {
     let mut ret = 0u8;
@@ -188,18 +185,6 @@ fn config() -> Option<(*const Mp, *const MpConf)> {
     Some((mp, conf))
 }
 
-use crate::proc::Cpu;
-static mut NCPU: usize = 0;
-static mut CPUS: [Cpu; MAX_NCPU] = [
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-];
 static mut IOAPIC_ID: u8 = 0;
 
 pub fn init() {
@@ -214,6 +199,7 @@ pub fn init() {
             proc_ent_type::MPPROC => {
                 let pr = p as *const MpProc;
                 unsafe {
+                    use super::proc::{CPUS, MAX_NCPU, NCPU};
                     if NCPU < MAX_NCPU {
                         CPUS[NCPU].apic_id = (*pr).apic_id;
                         NCPU += 1;
@@ -248,7 +234,7 @@ pub fn init() {
     }
 
     unsafe {
-        for cpu in CPUS[..NCPU].iter() {
+        for cpu in super::proc::CPUS[..super::proc::NCPU].iter() {
             dbg!(cpu.apic_id);
         }
     }
