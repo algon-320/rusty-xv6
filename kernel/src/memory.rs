@@ -1,4 +1,8 @@
 /// x86 page directory
+///
+/// for details:
+///     Intel@ 64 and IA-32 Architectures Software Developer's Manual,
+///     Vol.3: System Programming Guide - 4.3 (32-bit Paging)
 pub mod pg_dir {
     use utils::address::{PAddr, VAddr};
 
@@ -94,7 +98,6 @@ pub mod pg_dir {
         }
     }
 
-    /// Quoted from https://wiki.osdev.org/Paging
     #[allow(dead_code)]
     pub mod ent_flag {
         /// If the bit is set, then pages are 4 MiB in size. Otherwise, they are 4 KiB.
