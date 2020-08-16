@@ -1,7 +1,7 @@
 /// Multiprocessor support
 /// Search memory for MP description structures.
 /// http://developer.intel.com/design/pentium/datashts/24201606.pdf
-use crate::memory::p2v;
+use super::memory::p2v;
 use core::mem::size_of;
 use utils::prelude::*;
 use utils::x86;
@@ -205,7 +205,7 @@ static mut IOAPIC_ID: u8 = 0;
 pub fn init() {
     let (mp, conf) = config().expect("Expect to run on an SMP");
     let mut is_mp = true;
-    unsafe { crate::lapic::LAPIC = Some((*conf).lapic_addr) };
+    unsafe { super::lapic::LAPIC = Some((*conf).lapic_addr) };
 
     let mut p = unsafe { conf.add(1) as *const u8 };
     let e = unsafe { (conf as *const u8).add((*conf).length as usize) };
