@@ -13,6 +13,7 @@
 extern crate rlibc;
 
 mod kalloc;
+mod lapic;
 mod memory;
 mod mp;
 mod proc;
@@ -64,6 +65,7 @@ pub extern "C" fn main() {
         };
         vm::kvmalloc();
         mp::init();
+        lapic::init();
     }
     todo!()
 }

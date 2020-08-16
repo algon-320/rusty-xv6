@@ -201,12 +201,11 @@ static mut CPUS: [Cpu; MAX_NCPU] = [
     Cpu::zero(),
 ];
 static mut IOAPIC_ID: u8 = 0;
-static mut LAPIC: *const u32 = core::ptr::null_mut();
 
 pub fn init() {
     let (mp, conf) = config().expect("Expect to run on an SMP");
     let mut is_mp = true;
-    unsafe { LAPIC = (*conf).lapic_addr };
+    unsafe { crate::lapic::LAPIC = Some((*conf).lapic_addr) };
 
     let mut p = unsafe { conf.add(1) as *const u8 };
     let e = unsafe { (conf as *const u8).add((*conf).length as usize) };
