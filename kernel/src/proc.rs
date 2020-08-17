@@ -59,3 +59,20 @@ pub fn my_cpu() -> &'static mut Cpu {
     }
     panic!("unknown apic_id");
 }
+
+const MAX_NPROC: usize = 64;
+
+#[derive(Debug, Copy, Clone)]
+struct Process {}
+impl Process {
+    pub const fn zero() -> Self {
+        Self {}
+    }
+}
+use super::spinlock::SpinMutex;
+static PROC_TABLE: SpinMutex<[Process; MAX_NPROC]> =
+    SpinMutex::new("ptable", [Process::zero(); MAX_NPROC]);
+
+pub fn init() {
+    //
+}

@@ -77,6 +77,7 @@ pub extern "C" fn main() {
         ioapic::init();
         console::init();
         uart::init();
+        proc::init();
     }
     todo!()
 }
