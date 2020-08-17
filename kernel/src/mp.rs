@@ -185,8 +185,6 @@ fn config() -> Option<(*const Mp, *const MpConf)> {
     Some((mp, conf))
 }
 
-static mut IOAPIC_ID: u8 = 0;
-
 pub fn init() {
     let (mp, conf) = config().expect("Expect to run on an SMP");
     let mut is_mp = true;
@@ -210,7 +208,7 @@ pub fn init() {
             proc_ent_type::MPIOAPIC => {
                 let ioapic = p as *const MpIoApic;
                 unsafe {
-                    IOAPIC_ID = (*ioapic).apic_no;
+                    super::ioapic::IOAPIC_ID = (*ioapic).apic_no;
                     p = p.add(size_of::<MpIoApic>());
                 }
             }

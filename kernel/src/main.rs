@@ -13,6 +13,7 @@
 
 extern crate rlibc;
 
+mod ioapic;
 mod kalloc;
 mod lapic;
 mod memory;
@@ -20,6 +21,7 @@ mod mp;
 mod pic_irq;
 mod proc;
 mod spinlock;
+mod trap;
 mod vm;
 
 use utils::prelude::*;
@@ -70,6 +72,7 @@ pub extern "C" fn main() {
         lapic::init();
         vm::seginit();
         pic_irq::init();
+        ioapic::init();
     }
     todo!()
 }
