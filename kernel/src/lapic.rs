@@ -130,3 +130,7 @@ pub fn lapic_id() -> Option<u8> {
     unsafe { LAPIC? };
     Some(((unsafe { LapicReg::ID.read() } >> 24) & 0xFF) as u8)
 }
+
+/// Spin for a given number of microseconds.
+/// On real hardware would want to tune this dynamically.
+pub fn micro_delay(_us: u32) {}

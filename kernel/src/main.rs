@@ -23,6 +23,7 @@ mod pic_irq;
 mod proc;
 mod spinlock;
 mod trap;
+mod uart;
 mod vm;
 
 use utils::prelude::*;
@@ -75,6 +76,7 @@ pub extern "C" fn main() {
         pic_irq::init();
         ioapic::init();
         console::init();
+        uart::init();
     }
     todo!()
 }
