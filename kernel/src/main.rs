@@ -17,6 +17,7 @@ mod kalloc;
 mod lapic;
 mod memory;
 mod mp;
+mod pic_irq;
 mod proc;
 mod spinlock;
 mod vm;
@@ -68,6 +69,7 @@ pub extern "C" fn main() {
         mp::init();
         lapic::init();
         vm::seginit();
+        pic_irq::init();
     }
     todo!()
 }
