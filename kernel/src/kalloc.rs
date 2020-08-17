@@ -58,7 +58,7 @@ fn free_range(start: VAddr<u8>, end: VAddr<u8>) {
     let page = start.round_up(PAGE_SIZE);
     let mut page = page.cast::<Page>();
     let mut avail_page = 0;
-    while (page + 1).cast() < end {
+    while (page + 1).cast() <= end {
         kfree(page.mut_ptr());
         page += 1;
         avail_page += 1;
