@@ -13,6 +13,7 @@
 
 extern crate rlibc;
 
+mod console;
 mod ioapic;
 mod kalloc;
 mod lapic;
@@ -73,6 +74,7 @@ pub extern "C" fn main() {
         vm::seginit();
         pic_irq::init();
         ioapic::init();
+        console::init();
     }
     todo!()
 }
