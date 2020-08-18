@@ -78,6 +78,7 @@ pub extern "C" fn main() {
         console::init();
         uart::init();
         proc::init();
+        trap::init();
     }
     todo!()
 }

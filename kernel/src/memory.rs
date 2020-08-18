@@ -223,6 +223,60 @@ pub mod seg {
     }
 }
 
+pub mod gate {
+    #[derive(Copy, Clone)]
+    pub struct GateDesc {
+        f1: u32,
+        f2: u32,
+    }
+    impl GateDesc {
+        pub const fn new() -> Self {
+            Self { f1: 0, f2: 0 }
+        }
+        pub fn set_offset(mut self, offset: u32) -> Self {
+            let offset_00_15 = offset & 0x0000FFFF;
+            let offset_16_31 = offset & 0xFFFF0000;
+            self.f1 = (self.f1 & 0xFFFF0000) | offset_00_15;
+            self.f2 = (self.f2 & 0x0000FFFF) | offset_16_31;
+            self
+        }
+        pub fn set_selector(mut self, selector: u16) -> Self {
+            self.f1 = (self.f1 & 0x0000FFFF) | (selector as u32);
+            self
+        }
+        pub fn set_type_attribute(mut self, type_attr: u8) -> Self {
+            self.f2 = (self.f2 & 0xFFFF00FF) | ((type_attr as u32) << 8);
+            self
+        }
+        /// Set up a normal interrupt/trap gate descriptor.
+        /// - is_trap: true for a trap (= exception) gate, false for an interrupt gate.
+        ///   interrupt gate clears FL_IF, trap gate leaves FL_IF alone
+        /// - selector: Code segment selector for interrupt/trap handler
+        /// - offset: Offset in code segment for interrupt/trap handler
+        /// - dpl: Descriptor Privilege Level -
+        ///        the privilege level required for software to invoke
+        ///        this interrupt/trap gate explicitly using an int instruction.
+        pub fn set(&mut self, is_trap: bool, selector: u16, offset: u32, dpl: u8) {
+            use super::seg::seg_type::{STS_IG32, STS_TG32};
+
+            let present = 1;
+            let dpl = dpl & 0x03;
+            let s = 0; // Storage Segment : Set to 0 for interrupt and trap gates
+            let ty = (if is_trap { STS_TG32 } else { STS_IG32 }) & 0x0F;
+            let attr_ty = (present << 7) | (dpl << 5) | (s << 4) | ty;
+
+            //   7                           0
+            // +---+---+---+---+---+---+---+---+
+            // | P |  DPL  | S |    GateType   |
+            // +---+---+---+---+---+---+---+---+
+            *self = Self::new()
+                .set_offset(offset)
+                .set_selector(selector)
+                .set_type_attribute(attr_ty);
+        }
+    }
+}
+
 pub type Page = [u8; PAGE_SIZE];
 
 /// Page size
