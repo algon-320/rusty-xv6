@@ -42,11 +42,7 @@ fn putc(c: u8) {
     if !unsafe { IS_UART } {
         return;
     }
-    const RETRIES: usize = 128;
-    for _ in 0..RETRIES {
-        if (x86::inb(COM1 + 5) & 0x20) > 0 {
-            break;
-        }
+    while x86::inb(COM1 + 5) & 0x20 == 0 {
         super::lapic::micro_delay(10);
     }
     x86::outb(COM1 + 0, c);
