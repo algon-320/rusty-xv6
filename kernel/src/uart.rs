@@ -29,7 +29,7 @@ pub fn init() {
     super::ioapic::enable(super::trap::IRQ_COM1, 0);
 
     // Announce that we're here.
-    puts("xv6...！\n");
+    puts("xv6...\n");
 }
 
 fn puts(s: &str) {
