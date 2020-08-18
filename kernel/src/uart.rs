@@ -10,8 +10,8 @@ pub fn init() {
 
     // 9600 baud, 8 data bits, 1 stop bit, parity off.
     x86::outb(COM1 + 3, 0x80);
-    x86::outb(COM1 + 0, (115200 / 9600) as u8);
-    x86::outb(COM1 + 1, 0);
+    x86::outb(COM1 + 0, (115200 / 9600) as u8); // divisor value (lower)
+    x86::outb(COM1 + 1, 0); // divisor value (higher)
     x86::outb(COM1 + 3, 0x03); // Lock divisor, 8 data bits.
     x86::outb(COM1 + 4, 0);
     x86::outb(COM1 + 1, 0x01); // Enable receive interrupts.
