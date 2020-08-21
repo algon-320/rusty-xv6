@@ -71,20 +71,20 @@ pub extern "C" fn main() {
         {
             let kernel_end_addr = VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize);
             let heap_end = p2v(PAddr::from_raw(4 * 1024 * 1024));
-            kalloc::init1(kernel_end_addr, heap_end);
+            kalloc::init1(kernel_end_addr, heap_end); // phys page allocator
         };
-        vm::kvmalloc();
-        mp::init();
-        lapic::init();
-        vm::seginit();
-        pic_irq::init();
-        ioapic::init();
-        console::init();
-        uart::init();
-        proc::init();
-        trap::init();
-        fs::bcache::init();
-        ide::init();
+        vm::kvmalloc(); // kernel page table
+        mp::init(); // detect other processors
+        lapic::init(); // interrupt controller
+        vm::seginit(); // segment descriptors
+        pic_irq::init(); // disable pic
+        ioapic::init(); // another interrupt controller
+        console::init(); // console hardware
+        uart::init(); // serial port
+        proc::init(); // process table
+        trap::init(); // trap vectors
+        fs::bcache::init(); // buffer cache
+        ide::init(); // disk
     }
     todo!()
 }
