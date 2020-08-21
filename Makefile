@@ -16,9 +16,10 @@ GDB_EXTERN_TERM := gnome-terminal -x
 #===============================================================================
 
 .PHONY: qemu
-qemu: build-image
+qemu: build-image ./fs.img
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
+    -drive file=fs.img,index=1,media=disk,format=raw\
     -smp 2 -m 512 -serial mon:stdio
 
 .PHONY: gdb

@@ -16,6 +16,7 @@ extern crate rlibc;
 
 mod console;
 mod fs;
+mod ide;
 mod ioapic;
 mod kalloc;
 mod lapic;
@@ -83,6 +84,7 @@ pub extern "C" fn main() {
         proc::init();
         trap::init();
         fs::bcache::init();
+        ide::init();
     }
     todo!()
 }
