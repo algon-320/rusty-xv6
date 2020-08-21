@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: rust-toolchain
+      uses: actions-rs/toolchain@v1.0.6
+      with:
+        toolchain: nightly
+        override: true
+        components: rust-src
+
+    - name: build-bootloader
+      run: >-
+        RUSTFLAGS='-C link-args=-Tbootloader.ld'
+        cargo build
+        -Z build-std=core
+        --target ../i386.json
+        --release
+      working-directory: ./bootloader
+
+    - name: build-kernel
+      run: >-
+        RUSTFLAGS='-C link-args=-Tkernel.ld'
+        cargo build
+        -Z build-std=core
+        --target ../i386.json
+        --release
+      working-directory: ./kernel
