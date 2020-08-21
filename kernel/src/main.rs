@@ -7,6 +7,7 @@
 #![feature(custom_test_frameworks)]
 #![feature(const_raw_ptr_to_usize_cast)]
 #![feature(ptr_offset_from)]
+#![feature(const_in_array_repeat_expressions)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
@@ -14,6 +15,7 @@
 extern crate rlibc;
 
 mod console;
+mod fs;
 mod ioapic;
 mod kalloc;
 mod lapic;
@@ -21,6 +23,7 @@ mod memory;
 mod mp;
 mod pic_irq;
 mod proc;
+mod sleeplock;
 mod spinlock;
 mod trap;
 mod uart;
@@ -79,6 +82,7 @@ pub extern "C" fn main() {
         uart::init();
         proc::init();
         trap::init();
+        fs::bcache::init();
     }
     todo!()
 }

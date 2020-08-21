@@ -114,8 +114,8 @@ impl<T> SpinMutex<T> {
         SpinMutexGuard { mtx: self }
     }
 }
-unsafe impl<T> Send for SpinMutex<T> {}
-unsafe impl<T> Sync for SpinMutex<T> {}
+unsafe impl<T: Send> Send for SpinMutex<T> {}
+unsafe impl<T: Send> Sync for SpinMutex<T> {}
 
 pub struct SpinMutexGuard<'a, T> {
     mtx: &'a SpinMutex<T>,
