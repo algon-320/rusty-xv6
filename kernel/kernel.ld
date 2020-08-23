@@ -3,6 +3,12 @@ OUTPUT_ARCH(i386)
 ENTRY(_start)
 
 SECTIONS {
+    . = 0x7000;
+    .text.ap.entry : {
+        /* Prevent the linker from removing this section. */
+        KEEP(*(.text.ap.start))
+    }
+
     /* Must be equal to KERNLINK */
     . = 0x80100000;
 

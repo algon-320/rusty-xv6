@@ -33,8 +33,8 @@ mod vm;
 use utils::prelude::*;
 use utils::{assigned_array, x86};
 
-use memory::p2v;
 use memory::pg_dir::{ent_flag, PageDirEntry, NPDENTRIES};
+use memory::{p2v, v2p};
 
 #[used] // must not be removed
 #[no_mangle]
@@ -85,8 +85,45 @@ pub extern "C" fn main() {
         trap::init(); // trap vectors
         fs::bcache::init(); // buffer cache
         ide::init(); // disk
+        start_others(); // start other processors
     }
     todo!()
+}
+
+#[no_mangle]
+extern "C" fn mp_enter() {
+    log!("mp_enter");
+    todo!()
+}
+
+fn start_others() {
+    use core::ffi::c_void;
+    use proc::{my_cpu, CPUS, NCPU};
+    debug_assert_eq!(core::mem::size_of::<*mut c_void>(), 4);
+
+    const KSTACKSIZE: usize = 4096 * 2;
+
+    for cpu in unsafe { CPUS[..NCPU].iter() } {
+        if my_cpu() as *const _ == cpu {
+            continue;
+        }
+        let stack = kalloc::kalloc().unwrap() as *mut c_void;
+        let code = p2v(PAddr::<*mut c_void>::from_raw(0x7000));
+        unsafe {
+            let code = code.mut_ptr();
+            *code.sub(1) = stack.add(KSTACKSIZE);
+            *code.sub(2) = core::mem::transmute(mp_enter as extern "C" fn());
+            *code.sub(3) = v2p(VAddr::from(entry_page_dir.as_ptr())).cast().mut_ptr();
+        }
+
+        lapic::start_ap(cpu.apic_id, v2p(code));
+
+        use core::sync::atomic::{spin_loop_hint, Ordering};
+        while !cpu.started.load(Ordering::SeqCst) {
+            spin_loop_hint();
+        }
+        dbg!(stack);
+    }
 }
 
 #[cfg(test)]
@@ -193,4 +230,95 @@ entry:
     jmp     *%eax
 
 .comm stack, KSTACKSIZE
+"#}
+
+global_asm! {r#"
+.set CR0_PE,        0x00000001  # Protection Enable
+.set CR0_WP,        0x00010000  # Write Protect
+.set CR0_PG,        0x80000000  # Paging
+.set CR4_PSE,       0x00000010  # Page size extension
+
+.set SEG_KCODE,     1  # Kernel code
+.set SEG_KDATA,     2  # Kernel data + stack
+
+.pushsection .text.ap.start,"ax"
+
+.code16
+.globl ap_start
+ap_start:
+    cli
+
+    xorw    %ax, %ax
+    movw    %ax, %ds
+    movw    %ax, %ss
+    movw    %ax, %es
+
+    # Switch to protected mode
+    lgdt    ap_gdtdesc
+    # set protect mode bit (first bit of cr0)
+    movl    %cr0, %eax
+    orl     $CR0_PE, %eax
+    movl    %eax, %cr0
+
+    ljmp    $(SEG_KCODE << 3), $(ap_start32)
+
+.code32
+ap_start32:
+    # Set up the protected-mode data segment registers
+    movw    $(SEG_KDATA << 3), %ax  # Our data segment selector
+    movw    %ax, %ds                # -> DS: Data Segment
+    movw    %ax, %es                # -> ES: Extra Segment
+    movw    %ax, %ss                # -> SS: Stack Segment
+    movw    $0, %ax                 # Zero segments not ready for use
+    movw    %ax, %fs                # -> FS
+    movw    %ax, %gs                # -> GS
+
+    # Turn on page size extension for 4MiB pages
+    movl    %cr4, %eax
+    orl     $(CR4_PSE), %eax
+    movl    %eax, %cr4
+
+    # Use entrypgdir as our initial page table
+    movl    (ap_start - 12), %eax
+    movl    %eax, %cr3
+
+    # Turn on paging
+    movl    %cr0, %eax
+    orl     $(CR0_PE | CR0_PG | CR0_WP), %eax
+    movl    %eax, %cr0
+
+    # Switch to the stack allocated by start_others()
+    movl    (ap_start - 4), %esp
+    # Call mp_enter()
+    call    *(ap_start - 8)
+
+    # never return to here
+    movw    $0x8a00, %ax
+    movw    %ax, %dx
+    outw    %ax, %dx
+    movw    $0x8ae0, %ax
+    outw    %ax, %dx
+ap_spin:
+    jmp     ap_spin
+
+# align multiple of 4
+.p2align 2
+ap_gdt:
+    # null descriptor
+    .word   0x0000, 0x0000
+    .byte   0x00, 0x00, 0x00, 0x00
+
+    # Executable, Readable, [0, 0xFFFFFFFF]
+    .word   0xFFFF, 0x0000
+    .byte   0x00, 0x9A, 0xCF, 0x00
+
+    # Writable,  [0, 0xFFFFFFFF]
+    .word   0xFFFF, 0x0000
+    .byte   0x00, 0x92, 0xCF, 0x00
+
+ap_gdtdesc:
+  .word   (ap_gdtdesc - ap_gdt - 1)
+  .long   ap_gdt
+
+.popsection
 "#}
