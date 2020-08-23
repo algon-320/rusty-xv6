@@ -26,6 +26,7 @@ qemu: build-image ./fs.img
 gdb: build-image
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
+    -drive file=fs.img,index=1,media=disk,format=raw\
     -smp 2 -m 512 -S -gdb tcp::$(GDB_PORT) & \
     $(GDB_EXTERN_TERM) gdb $(KERNEL_BIN) -ex "target remote localhost:$(GDB_PORT)"
 
