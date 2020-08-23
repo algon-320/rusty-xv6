@@ -86,6 +86,11 @@ pub extern "C" fn main() {
         fs::bcache::init(); // buffer cache
         ide::init(); // disk
         start_others(); // start other processors
+
+        kalloc::init2(
+            p2v(PAddr::from_raw(4 * 1024 * 1024)),
+            p2v(memory::PHYSTOP).cast(),
+        ); // must come after start_others()
     }
     todo!()
 }

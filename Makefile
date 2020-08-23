@@ -1,5 +1,5 @@
 #===============================================================================
-PROFILE := debug
+PROFILE := release
 CARGO_FLAG := $(if $(findstring release,$(PROFILE)),--release,)
 OUT_DIR := ./target/i386/$(PROFILE)
 
