@@ -177,6 +177,21 @@ pub fn lgdt(seg_desc: *const u8, sz: u16) {
             : "volatile");
     }
 }
+#[inline]
+pub fn lidt(gate_desc: *const u8, sz: u16) {
+    let pd: [u16; 3] = [
+        sz - 1,
+        gate_desc as usize as u16,
+        (gate_desc as usize).wrapping_shr(16) as u16,
+    ];
+    unsafe {
+        llvm_asm!("lidt ($0)"
+            :
+            : "r"(pd.as_ptr())
+            :
+            : "volatile");
+    }
+}
 
 /// do nothing
 #[inline]
