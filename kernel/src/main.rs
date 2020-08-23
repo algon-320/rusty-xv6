@@ -241,6 +241,7 @@ global_asm! {r#"
 .set SEG_KCODE,     1  # Kernel code
 .set SEG_KDATA,     2  # Kernel data + stack
 
+# Save the current destination section and switch to '.text.ap.start'
 .pushsection .text.ap.start,"ax"
 
 .code16
@@ -320,5 +321,6 @@ ap_gdtdesc:
   .word   (ap_gdtdesc - ap_gdt - 1)
   .long   ap_gdt
 
+# Restore previous destination
 .popsection
 "#}
