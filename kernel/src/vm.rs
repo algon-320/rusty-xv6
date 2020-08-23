@@ -169,7 +169,7 @@ pub fn kvmalloc() {
     switch_kvm();
 }
 
-fn switch_kvm() {
+pub fn switch_kvm() {
     let kpg_dir = unsafe { VAddr::from(KPG_DIR) };
     x86::lcr3(v2p(kpg_dir).raw() as u32);
 }

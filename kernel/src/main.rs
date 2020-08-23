@@ -90,10 +90,12 @@ pub extern "C" fn main() {
     todo!()
 }
 
+// Other CPUs jump here
 #[no_mangle]
 extern "C" fn mp_enter() {
-    log!("mp_enter");
-    todo!()
+    vm::switch_kvm();
+    vm::seginit();
+    lapic::init();
 }
 
 fn start_others() {
