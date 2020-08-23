@@ -1,13 +1,15 @@
 use super::memory::seg;
+use core::sync::atomic::AtomicBool;
 use utils::x86;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Cpu {
     /// Local APIC ID
     pub apic_id: u8,
     pub gdt: [seg::SegDesc; seg::NSEGS],
     pub num_cli: i32,
     pub int_enabled: bool,
+    pub started: AtomicBool,
 }
 impl Cpu {
     pub const fn zero() -> Self {
@@ -16,6 +18,7 @@ impl Cpu {
             gdt: seg::GDT_ZERO,
             num_cli: 0,
             int_enabled: false,
+            started: AtomicBool::new(false),
         }
     }
 }
