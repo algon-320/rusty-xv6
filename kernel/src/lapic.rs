@@ -1,4 +1,6 @@
-#![allow(dead_code)]
+use super::memory::p2v;
+use utils::prelude::*;
+use utils::x86;
 
 /// Local APIC registers, divided by 4 for use as uint[] indices.
 ///
@@ -134,3 +136,49 @@ pub fn lapic_id() -> Option<u8> {
 /// Spin for a given number of microseconds.
 /// On real hardware would want to tune this dynamically.
 pub fn micro_delay(_us: u32) {}
+
+const CMOS_PORT: u16 = 0x70;
+const CMOS_RETURN: u16 = 0x71;
+
+// Start additional processor running entry code at addr.
+// See Appendix B of MultiProcessor Specification.
+pub fn start_ap(apic_id: u8, addr: PAddr<*mut core::ffi::c_void>) {
+    dbg!(apic_id, addr.ptr());
+
+    // "The BSP must initialize CMOS shutdown code to 0AH
+    // and the warm reset vector (DWORD based at 40:67) to point at
+    // the AP startup code prior to the [universal startup algorithm]."
+    x86::outb(CMOS_PORT + 0, 0x0F); // offset 0xF is shutdown code
+    x86::outb(CMOS_PORT + 1, 0x0A);
+    let wrv = {
+        let p = unsafe { PAddr::<u16>::from_raw_unchecked(0x40 << 4 | 0x67) };
+        p2v(p).mut_ptr()
+    };
+    unsafe {
+        *wrv.add(0) = 0;
+        *wrv.add(1) = ((addr.raw() >> 4) & 0xFFFF) as u16;
+    }
+
+    // "Universal startup algorithm."
+    // Send INIT (level-triggered) interrupt to reset other CPU.
+    unsafe {
+        LapicReg::ICRHI.write((apic_id as u32) << 24);
+        LapicReg::ICRLO.write(INIT | LEVEL | ASSERT);
+        micro_delay(200);
+        LapicReg::ICRLO.write(INIT | LEVEL);
+        micro_delay(100);
+    }
+
+    // Send startup IPI (twice!) to enter code.
+    // Regular hardware is supposed to only accept a STARTUP
+    // when it is in the halted state due to an INIT.  So the second
+    // should be ignored, but it is part of the official Intel algorithm.
+    // Bochs complains about the second one.  Too bad for Bochs.
+    for _ in 0..2 {
+        unsafe {
+            LapicReg::ICRHI.write((apic_id as u32) << 24);
+            LapicReg::ICRLO.write(STARTUP | (addr.raw() as u32 >> 12));
+            micro_delay(200);
+        }
+    }
+}
