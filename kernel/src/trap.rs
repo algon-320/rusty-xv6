@@ -12,6 +12,7 @@ pub const IRQ_SPURIOUS: u32 = 31;
 
 use super::memory::gate;
 use super::memory::seg;
+use utils::x86;
 
 /// Interrupt descriptor table (shared by all CPUs).
 static mut IDT: [gate::GateDesc; 256] = [gate::GateDesc::new(); 256];
@@ -104,6 +105,11 @@ pub struct TrapFrame {
     esp: u32,
     ss: u16,
     _padding6: u16,
+}
+
+pub fn idt_init() {
+    const IDT_SZ: usize = core::mem::size_of::<[gate::GateDesc; 256]>();
+    unsafe { x86::lidt(IDT.as_ptr() as *const u8, IDT_SZ as u16) };
 }
 
 #[no_mangle]

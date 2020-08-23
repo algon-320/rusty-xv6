@@ -96,6 +96,17 @@ extern "C" fn mp_enter() {
     vm::switch_kvm();
     vm::seginit();
     lapic::init();
+    mp_main();
+}
+
+// Common CPU setup code.
+fn mp_main() {
+    use core::sync::atomic::Ordering;
+    use proc::{my_cpu, my_cpu_id};
+    log!("cpu{}: starting", my_cpu_id());
+    trap::idt_init(); // load idt register
+    my_cpu().started.store(true, Ordering::SeqCst); // tell start_others() we're up
+    todo!()
 }
 
 fn start_others() {
