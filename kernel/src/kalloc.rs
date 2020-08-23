@@ -79,7 +79,7 @@ pub fn kfree(page: *mut Page) {
     assert!(v2p(VAddr::from(page)) < memory::PHYSTOP);
 
     // Fill with junk to catch dangling refs
-    unsafe { rlibc::memset(page as *mut u8, 1, PAGE_SIZE) };
+    unsafe { rlibc::memset(page as *mut u8, 1, PAGE_SIZE) }; // TODO: make this fast
 
     KMEM.with(|free_list| {
         let r = page as *mut Run;
