@@ -79,7 +79,6 @@ fn map_pages(
 ) -> Option<()> {
     let mut a: VAddr<Page> = va.round_down(PAGE_SIZE).cast();
     let last: VAddr<Page> = (va + size - 1).round_down(PAGE_SIZE).cast();
-    let mut cnt = 0;
     loop {
         let pte = walk_page_dir(pg_dir, a, true)?;
         if pte.flags_check(ent_flag::PRESENT) {
@@ -91,9 +90,7 @@ fn map_pages(
         }
         a += 1;
         pa += 1;
-        cnt += 1;
     }
-    log!("map_pages: cnt = {}", cnt);
     Some(())
 }
 

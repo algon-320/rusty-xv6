@@ -1,4 +1,4 @@
-use super::proc::{my_cpu, Cpu};
+use super::proc::{my_cpu, my_cpu_id, Cpu};
 use core::sync::atomic::{fence, spin_loop_hint, AtomicBool, AtomicPtr, Ordering};
 use utils::prelude::*;
 use utils::x86;
@@ -27,8 +27,6 @@ impl SpinLock {
     pub fn acquire(&self) {
         push_cli();
         assert!(!self.holding(), "acquire: {}", self.name);
-        #[cfg(debug_assertions)]
-        log!("lock ({}) acquired", self.name);
 
         while self.locked.compare_and_swap(false, true, Ordering::Relaxed) {
             spin_loop_hint();
@@ -43,7 +41,7 @@ impl SpinLock {
         // TODO: get_caller_pcs
 
         #[cfg(debug_assertions)]
-        log!("lock({}) is now taken by {:p}", self.name, my_cpu());
+        log!("lock({}) taken by cpu:{}", self.name, my_cpu_id());
     }
 
     // Release the lock.
@@ -60,7 +58,7 @@ impl SpinLock {
         self.locked.store(false, Ordering::Relaxed);
 
         #[cfg(debug_assertions)]
-        log!("lock({}) was released", self.name);
+        log!("lock({}) released", self.name);
         pop_cli();
     }
 
