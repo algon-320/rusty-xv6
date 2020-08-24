@@ -2,8 +2,6 @@
 #![no_main]
 #![feature(lang_items)]
 #![feature(global_asm)]
-#![feature(llvm_asm)]
-#![feature(start)]
 
 use utils::x86;
 mod elf;
