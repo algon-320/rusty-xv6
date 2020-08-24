@@ -12,7 +12,7 @@ KERNEL_DEPS := kernel/Cargo.toml kernel/kernel.ld kernel/src/* utils/src/*
 IMAGE := $(OUT_DIR)/xv6.img
 
 GDB_PORT := $(shell expr `id -u` % 5000 + 25000)
-GDB_EXTERN_TERM := gnome-terminal -x
+GDB_EXTERN_TERM := gnome-terminal --
 #===============================================================================
 
 .PHONY: qemu
