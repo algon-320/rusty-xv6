@@ -1,72 +1,102 @@
 use super::memory::seg;
+use core::cell::{RefCell, RefMut};
 use core::sync::atomic::AtomicBool;
 use utils::x86;
 
 #[derive(Debug)]
 pub struct Cpu {
-    /// Local APIC ID
-    pub apic_id: u8,
     pub gdt: [seg::SegDesc; seg::NSEGS],
     pub num_cli: i32,
     pub int_enabled: bool,
-    pub started: AtomicBool,
+    pub current_proc: *mut Process,
 }
-impl Cpu {
+pub struct CpuShared {
+    /// Local APIC ID
+    pub apic_id: u8,
+    pub started: AtomicBool,
+    pub private: RefCell<Cpu>,
+}
+impl CpuShared {
     pub const fn zero() -> Self {
         Self {
             apic_id: 0,
-            gdt: seg::GDT_ZERO,
-            num_cli: 0,
-            int_enabled: false,
             started: AtomicBool::new(false),
+            private: RefCell::new(Cpu {
+                gdt: seg::GDT_ZERO,
+                num_cli: 0,
+                int_enabled: false,
+                current_proc: core::ptr::null_mut(),
+            }),
         }
     }
 }
 
 /// maximum number of CPUs
-pub const MAX_NCPU: usize = 8;
-pub(crate) static mut NCPU: usize = 0;
-pub(crate) static mut CPUS: [Cpu; MAX_NCPU] = [
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
-    Cpu::zero(),
+const MAX_NCPU: usize = 8;
+static mut _NCPU: usize = 0;
+/// Should not access this directly. Use cpus() instead.
+pub static mut _CPUS: [CpuShared; MAX_NCPU] = [
+    CpuShared::zero(),
+    CpuShared::zero(),
+    CpuShared::zero(),
+    CpuShared::zero(),
+    CpuShared::zero(),
+    CpuShared::zero(),
+    CpuShared::zero(),
+    CpuShared::zero(),
 ];
-
-// Must be called with interrupts disabled
-pub fn my_cpu_id() -> u8 {
-    let ptr = my_cpu() as *mut _ as *const Cpu;
-    let off = unsafe { CPUS.as_ptr() };
-    unsafe { ptr.offset_from(off) as u8 }
+pub unsafe fn init_new_cpu() -> Option<&'static mut CpuShared> {
+    if _NCPU == MAX_NCPU {
+        None
+    } else {
+        _NCPU += 1;
+        Some(&mut _CPUS[_NCPU - 1])
+    }
+}
+pub fn cpus() -> &'static [CpuShared] {
+    unsafe { &_CPUS[.._NCPU] }
 }
 
-pub fn my_cpu() -> &'static mut Cpu {
+/// Must be called with interrupts disabled
+pub fn my_cpu_id() -> u8 {
     assert!(
         x86::read_eflags() & x86::eflags::FL_IF == 0,
         "my_cpu called with interrupts enabled"
     );
 
     let apic_id = super::lapic::lapic_id().expect("LAPIC is None");
-    // APIC IDs are not guaranteed to be contiguous. Maybe we should have
-    // a reverse map, or reserve a register to store &CPUS[i].
-    unsafe {
-        for cpu in CPUS.iter_mut() {
-            if cpu.apic_id == apic_id {
-                return cpu;
+    // APIC IDs are not guaranteed to be contiguous.
+    cpus()
+        .iter()
+        .position(|cpu| cpu.apic_id == apic_id)
+        .unwrap() as u8
+}
+
+pub fn my_cpu() -> RefMut<'static, Cpu> {
+    assert!(
+        x86::read_eflags() & x86::eflags::FL_IF == 0,
+        "my_cpu called with interrupts enabled"
+    );
+
+    let apic_id = super::lapic::lapic_id().expect("LAPIC is None");
+    // APIC IDs are not guaranteed to be contiguous.
+    cpus()
+        .iter()
+        .find_map(|cpu| {
+            if cpu.apic_id != apic_id {
+                None
+            } else {
+                // log!("cpu {} is now borrowed", apic_id);
+                Some(cpu.private.borrow_mut())
             }
-        }
-    }
-    panic!("unknown apic_id");
+        })
+        .unwrap()
 }
 
 const MAX_NPROC: usize = 64;
 
 #[derive(Debug, Copy, Clone)]
-struct Process {}
+pub struct Process {}
 impl Process {
     pub const fn zero() -> Self {
         Self {}

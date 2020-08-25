@@ -106,23 +106,26 @@ extern "C" fn mp_enter() {
 // Common CPU setup code.
 fn mp_main() {
     use core::sync::atomic::Ordering;
-    use proc::{my_cpu, my_cpu_id};
+    use proc::{cpus, my_cpu, my_cpu_id};
     log!("cpu{}: starting", my_cpu_id());
     trap::idt_init(); // load idt register
-    my_cpu().started.store(true, Ordering::SeqCst); // tell start_others() we're up
+    let id = my_cpu_id() as usize;
+    cpus()[id].started.store(true, Ordering::SeqCst); // tell start_others() we're up
     todo!()
 }
 
 fn start_others() {
     use core::ffi::c_void;
     use memory::KSTACKSIZE;
-    use proc::{my_cpu, CPUS, NCPU};
+    use proc::{cpus, my_cpu_id};
     debug_assert_eq!(core::mem::size_of::<*mut c_void>(), 4);
 
-    for cpu in unsafe { CPUS[..NCPU].iter() } {
-        if my_cpu() as *const _ == cpu {
+    let main_cpu_id = my_cpu_id() as usize;
+    for (idx, cpu) in cpus().iter().enumerate() {
+        if idx == main_cpu_id {
             continue;
         }
+
         let stack = kalloc::kalloc().unwrap() as *mut c_void;
         let code = p2v(PAddr::<*mut c_void>::from_raw(0x7000));
         unsafe {
@@ -138,7 +141,6 @@ fn start_others() {
         while !cpu.started.load(Ordering::SeqCst) {
             spin_loop_hint();
         }
-        dbg!(stack);
     }
 }
 

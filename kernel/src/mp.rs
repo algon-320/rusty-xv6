@@ -197,10 +197,10 @@ pub fn init() {
             proc_ent_type::MPPROC => {
                 let pr = p as *const MpProc;
                 unsafe {
-                    use super::proc::{CPUS, MAX_NCPU, NCPU};
-                    if NCPU < MAX_NCPU {
-                        CPUS[NCPU].apic_id = (*pr).apic_id;
-                        NCPU += 1;
+                    use super::proc::init_new_cpu;
+                    if let Some(cpu) = init_new_cpu() {
+                        cpu.apic_id = (*pr).apic_id;
+                        log!("cpu found (apic id: {})", cpu.apic_id);
                     }
                     p = p.add(size_of::<MpProc>());
                 }
@@ -229,11 +229,5 @@ pub fn init() {
         // But it would on real hardware.
         x86::outb(0x22, 0x70); // Select IMCR
         x86::outb(0x23, x86::inb(0x23) | 1); // Mask external interrupts
-    }
-
-    unsafe {
-        for cpu in super::proc::CPUS[..super::proc::NCPU].iter() {
-            dbg!(cpu.apic_id);
-        }
     }
 }

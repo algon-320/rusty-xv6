@@ -23,7 +23,7 @@ pub fn seginit() {
     // Cannot share a CODE descriptor for both kernel and user
     // because it would have to have dpl::USER,
     // but the CPU forbids an interrupt from CPL=0 to DPL=3.
-    let c = super::proc::my_cpu();
+    let mut c = super::proc::my_cpu();
     c.gdt[SEG_KCODE] = SegDesc::seg(seg_type::STA_X | seg_type::STA_R, 0, 0xFFFFFFFF, 0);
     c.gdt[SEG_KDATA] = SegDesc::seg(seg_type::STA_W, 0, 0xFFFFFFFF, 0);
     c.gdt[SEG_UCODE] = SegDesc::seg(seg_type::STA_X | seg_type::STA_R, 0, 0xFFFFFFFF, dpl::USER);

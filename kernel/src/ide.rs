@@ -29,7 +29,7 @@ fn wait(check_err: bool) -> Option<()> {
 }
 
 pub fn init() {
-    let last_cpu = unsafe { super::proc::NCPU } - 1;
+    let last_cpu = super::proc::cpus().len() - 1;
     super::ioapic::enable(super::trap::IRQ_IDE, last_cpu);
     wait(false);
 

@@ -1,6 +1,6 @@
 pub mod spin {
-    use crate::proc::{my_cpu, my_cpu_id, Cpu};
-    use core::sync::atomic::{fence, spin_loop_hint, AtomicBool, AtomicPtr, Ordering};
+    use crate::proc::{my_cpu_id, Cpu};
+    use core::sync::atomic::{fence, spin_loop_hint, AtomicBool, AtomicI8, Ordering};
     use utils::prelude::*;
     use utils::x86;
 
@@ -9,7 +9,7 @@ pub mod spin {
 
         // for debugging
         name: &'static str,
-        cpu: AtomicPtr<Cpu>,
+        cpu: AtomicI8,
     }
 
     impl SpinLock {
@@ -17,7 +17,7 @@ pub mod spin {
             Self {
                 locked: AtomicBool::new(false),
                 name,
-                cpu: AtomicPtr::new(core::ptr::null_mut()),
+                cpu: AtomicI8::new(-1),
             }
         }
 
@@ -38,7 +38,7 @@ pub mod spin {
             // references happen after the lock is acquired.
             fence(Ordering::Acquire);
 
-            self.cpu.store(my_cpu(), Ordering::Relaxed);
+            self.cpu.store(my_cpu_id() as i8, Ordering::Relaxed);
             // TODO: get_caller_pcs
 
             #[cfg(debug_assertions)]
@@ -48,7 +48,7 @@ pub mod spin {
         // Release the lock.
         pub fn release(&self) {
             assert!(self.holding(), "release: {}", self.name);
-            self.cpu.store(core::ptr::null_mut(), Ordering::Relaxed);
+            self.cpu.store(-1, Ordering::Relaxed);
 
             // Tell the compiler and the processor to not move loads or stores
             // past this point, to ensure that all the stores in the critical
@@ -66,8 +66,8 @@ pub mod spin {
         /// Check whether this cpu is holding the lock.
         fn holding(&self) -> bool {
             super::push_cli();
-            let r =
-                self.locked.load(Ordering::Relaxed) && self.cpu.load(Ordering::Relaxed) == my_cpu();
+            let r = self.locked.load(Ordering::Relaxed)
+                && self.cpu.load(Ordering::Relaxed) == my_cpu_id() as i8;
             super::pop_cli();
             r
         }
@@ -214,20 +214,22 @@ use utils::x86;
 pub fn push_cli() {
     let eflags = x86::read_eflags();
     x86::cli();
-    if my_cpu().num_cli == 0 {
-        my_cpu().int_enabled = (eflags & x86::FL_IF) != 0;
+    let mut cpu = my_cpu();
+    if cpu.num_cli == 0 {
+        cpu.int_enabled = (eflags & x86::FL_IF) != 0;
     }
-    my_cpu().num_cli += 1;
+    cpu.num_cli += 1;
 }
 pub fn pop_cli() {
     if (x86::read_eflags() & x86::FL_IF) != 0 {
         panic!("pop_cli - interruptible");
     }
-    if my_cpu().num_cli == 0 {
+    let mut cpu = my_cpu();
+    if cpu.num_cli == 0 {
         panic!("pop_cli: num_cli zero");
     }
-    my_cpu().num_cli -= 1;
-    if my_cpu().num_cli == 0 && my_cpu().int_enabled {
+    cpu.num_cli -= 1;
+    if cpu.num_cli == 0 && cpu.int_enabled {
         x86::sti();
     }
 }
