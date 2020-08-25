@@ -90,8 +90,9 @@ pub extern "C" fn main() {
             p2v(PAddr::from_raw(4 * 1024 * 1024)),
             p2v(memory::PHYSTOP).cast(),
         ); // must come after start_others()
+        proc::user_init(); // first user process
+        mp_main(); // finish this processor's setup
     }
-    todo!()
 }
 
 // Other CPUs jump here

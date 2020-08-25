@@ -109,3 +109,7 @@ static PROC_TABLE: SpinMutex<[Process; MAX_NPROC]> =
 pub fn init() {
     //
 }
+
+pub fn user_init() {
+    todo!()
+}
