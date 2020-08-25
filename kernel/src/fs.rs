@@ -67,3 +67,8 @@ pub mod bcache {
         BCACHE.init();
     }
 }
+
+pub mod inode {
+    /// in-memory copy of an inode
+    pub struct Inode {}
+}

@@ -1,9 +1,7 @@
+use super::fs::inode::Inode;
 use super::lock::spin::SpinLock;
 
 static CONSOLE_LOCK: SpinLock = SpinLock::new("console");
-
-/// in-memory copy of an inode
-pub struct Inode {}
 
 /// table mapping major device number to device functions
 struct Dev {
