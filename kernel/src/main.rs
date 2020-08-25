@@ -106,7 +106,7 @@ extern "C" fn mp_enter() {
 // Common CPU setup code.
 fn mp_main() {
     use core::sync::atomic::Ordering;
-    use proc::{cpus, my_cpu, my_cpu_id};
+    use proc::{cpus, my_cpu_id};
     log!("cpu{}: starting", my_cpu_id());
     trap::idt_init(); // load idt register
     let id = my_cpu_id() as usize;
