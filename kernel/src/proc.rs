@@ -72,7 +72,7 @@ impl Process {
         Self {}
     }
 }
-use super::spinlock::SpinMutex;
+use super::lock::spin::SpinMutex;
 static PROC_TABLE: SpinMutex<[Process; MAX_NPROC]> =
     SpinMutex::new("ptable", [Process::zero(); MAX_NPROC]);
 

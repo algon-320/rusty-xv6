@@ -1,4 +1,4 @@
-use super::spinlock::SpinLock;
+use super::lock::spin::SpinLock;
 
 static CONSOLE_LOCK: SpinLock = SpinLock::new("console");
 

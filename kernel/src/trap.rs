@@ -46,7 +46,7 @@ extern "C" {
     static VECTORS: [u32; 256];
 }
 
-use super::spinlock::SpinMutex;
+use super::lock::spin::SpinMutex;
 static TICKS: SpinMutex<u32> = SpinMutex::new("time", 0);
 
 pub fn init() {

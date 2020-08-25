@@ -28,8 +28,8 @@ pub mod bcache {
         prev: usize,
     }
 
-    use super::super::sleeplock::SleepMutex;
-    use super::super::spinlock::SpinMutex;
+    use crate::lock::sleep::SleepMutex;
+    use crate::lock::spin::SpinMutex;
     struct Bcache {
         // last one is used for the head
         link: SpinMutex<[BufLink; NBUF + 1]>,

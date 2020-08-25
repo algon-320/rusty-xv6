@@ -1,6 +1,6 @@
+use super::lock::spin::SpinLock;
 use super::memory;
 use super::memory::{v2p, Page, PAGE_SIZE};
-use super::spinlock::SpinLock;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 use utils::prelude::*;

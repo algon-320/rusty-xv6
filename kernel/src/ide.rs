@@ -1,5 +1,5 @@
 use super::fs::Buf;
-use super::spinlock::SpinMutex;
+use super::lock::spin::SpinMutex;
 use utils::prelude::*;
 use utils::x86;
 
