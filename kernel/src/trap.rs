@@ -74,36 +74,36 @@ pub fn init() {
 #[repr(C)]
 pub struct TrapFrame {
     // registers as pushed by pushal
-    edi: u32,
-    esi: u32,
-    ebp: u32,
+    pub edi: u32,
+    pub esi: u32,
+    pub ebp: u32,
     orig_esp: u32, // useless & ignored
-    ebx: u32,
-    edx: u32,
-    ecx: u32,
-    eax: u32,
+    pub ebx: u32,
+    pub edx: u32,
+    pub ecx: u32,
+    pub eax: u32,
 
     // rest of trap frame
-    gs: u16,
+    pub gs: u16,
     _padding1: u16,
-    fs: u16,
+    pub fs: u16,
     _padding2: u16,
-    es: u16,
+    pub es: u16,
     _padding3: u16,
-    ds: u16,
+    pub ds: u16,
     _padding4: u16,
-    trap_no: u32,
+    pub trap_no: u32,
 
     // below here defined by x86 hardware
-    err: u32,
-    eip: u32,
-    cs: u16,
+    pub err: u32,
+    pub eip: usize,
+    pub cs: u16,
     _padding5: u16,
-    eflags: u32,
+    pub eflags: u32,
 
     // below here only when crossing rings, such as from user to kernel
-    esp: u32,
-    ss: u16,
+    pub esp: usize,
+    pub ss: u16,
     _padding6: u16,
 }
 
