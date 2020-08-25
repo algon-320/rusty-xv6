@@ -282,6 +282,9 @@ pub type Page = [u8; PAGE_SIZE];
 /// Page size
 pub const PAGE_SIZE: usize = 4096;
 
+/// Kernel stack size
+pub const KSTACKSIZE: usize = 4096;
+
 /// First kernel virtual address
 pub const KERNBASE: VAddr<Page> = unsafe { VAddr::from_raw_unchecked(0x80000000) };
 /// Address where kernel is linked (KERNBASE + EXTMEM)

@@ -115,10 +115,9 @@ fn mp_main() {
 
 fn start_others() {
     use core::ffi::c_void;
+    use memory::KSTACKSIZE;
     use proc::{my_cpu, CPUS, NCPU};
     debug_assert_eq!(core::mem::size_of::<*mut c_void>(), 4);
-
-    const KSTACKSIZE: usize = 4096 * 2;
 
     for cpu in unsafe { CPUS[..NCPU].iter() } {
         if my_cpu() as *const _ == cpu {
@@ -213,7 +212,7 @@ global_asm! {r#"
 .set CR0_PG,        0x80000000  # Paging
 .set CR4_PSE,       0x00000010  # Page size extension
 
-.set KSTACKSIZE,    4096 * 2    # Size of per-process kernel stack
+.set STACK_SIZE,    4096 * 2    # Additional space for logging
 
 .p2align 2
 .text
@@ -240,13 +239,13 @@ entry:
     movl    %eax, %cr0
 
     # Set up the stack pointer
-    movl    $(stack + KSTACKSIZE), %esp
+    movl    $(stack + STACK_SIZE), %esp
 
     # Jump to main()
     mov     $main, %eax
     jmp     *%eax
 
-.comm stack, KSTACKSIZE
+.comm stack, STACK_SIZE
 "#}
 
 global_asm! {r#"
