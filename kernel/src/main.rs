@@ -56,7 +56,7 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
 
 extern "C" {
     ///  first address after kernel loaded from ELF file
-    static kernel_end: core::ffi::c_void;
+    static kernel_end: u8;
 }
 
 #[no_mangle]
@@ -67,11 +67,11 @@ pub extern "C" fn main() {
     }
     #[cfg(not(test))]
     {
-        {
-            let kernel_end_addr = VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize);
-            let heap_end = p2v(PAddr::from_raw(4 * 1024 * 1024));
-            kalloc::init1(kernel_end_addr, heap_end); // phys page allocator
-        };
+        let pre_alloc_lim = PAddr::from_raw(4 * 1024 * 1024);
+        kalloc::init1(
+            VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize),
+            p2v(pre_alloc_lim),
+        ); // phys page allocator
         vm::kvmalloc(); // kernel page table
         mp::init(); // detect other processors
         lapic::init(); // interrupt controller
@@ -84,12 +84,11 @@ pub extern "C" fn main() {
         trap::init(); // trap vectors
         fs::bcache::init(); // buffer cache
         ide::init(); // disk
+
         start_others(); // start other processors
 
-        kalloc::init2(
-            p2v(PAddr::from_raw(4 * 1024 * 1024)),
-            p2v(memory::PHYSTOP).cast(),
-        ); // must come after start_others()
+        // must come after start_others()
+        kalloc::init2(p2v(pre_alloc_lim), p2v(memory::PHYSTOP).cast());
         proc::user_init(); // first user process
         mp_main(); // finish this processor's setup
     }
