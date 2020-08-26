@@ -155,8 +155,10 @@ pub fn start_ap(apic_id: u8, addr: PAddr<*mut core::ffi::c_void>) {
         p2v(p).mut_ptr()
     };
     unsafe {
-        *wrv.add(0) = 0;
-        *wrv.add(1) = ((addr.raw() >> 4) & 0xFFFF) as u16;
+        let off = 0;
+        wrv.add(0).write_unaligned(off);
+        let seg = ((addr.raw() >> 4) & 0xFFFF) as u16;
+        wrv.add(1).write_unaligned(seg);
     }
 
     // "Universal startup algorithm."
