@@ -71,4 +71,18 @@ pub mod bcache {
 pub mod inode {
     /// in-memory copy of an inode
     pub struct Inode {}
+    pub struct InodeRef {
+        ptr: *const Inode,
+    }
+    impl InodeRef {
+        pub const fn dangling() -> Self {
+            Self {
+                ptr: core::ptr::null(),
+            }
+        }
+    }
+
+    pub fn from_name(path: &str) -> InodeRef {
+        todo!()
+    }
 }

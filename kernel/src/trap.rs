@@ -117,6 +117,10 @@ pub extern "C" fn trap(_trap_frame: *const TrapFrame) {
     todo!()
 }
 
+extern "C" {
+    pub fn trapret();
+}
+
 global_asm! {r#"
 # vectors.S sends all traps here.
 .globl alltraps

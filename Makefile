@@ -9,6 +9,9 @@ BOOTLOADER_DEPS := bootloader/Cargo.toml bootloader/bootloader.ld bootloader/src
 KERNEL_BIN := $(OUT_DIR)/kernel
 KERNEL_DEPS := kernel/Cargo.toml kernel/kernel.ld kernel/src/* utils/src/*
 
+INITCODE := $(OUT_DIR)/init.bin
+INITCODE_DEPS := user/init/Cargo.toml user/init/init.ld user/init/src/*
+
 IMAGE := $(OUT_DIR)/xv6.img
 
 GDB_PORT := $(shell expr `id -u` % 5000 + 25000)
@@ -33,8 +36,12 @@ gdb: build-image
 $(BOOTLOADER_BIN): $(BOOTLOADER_DEPS)
 	cd bootloader; cargo build --release
 
-$(KERNEL_BIN): $(KERNEL_DEPS)
+$(KERNEL_BIN): $(KERNEL_DEPS) $(INITCODE)
 	cd kernel; cargo build $(CARGO_FLAG)
+
+$(INITCODE): $(INITCODE_DEPS)
+	cd user/init; cargo build $(CARGO_FLAG)
+	objcopy -O binary -j .text -j .rodata $(OUT_DIR)/init $(INITCODE)
 
 .PHONY: build-image
 build-image: $(BOOTLOADER_BIN) $(KERNEL_BIN)

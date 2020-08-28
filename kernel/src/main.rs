@@ -5,12 +5,16 @@
 #![feature(llvm_asm)]
 #![feature(start)]
 #![feature(custom_test_frameworks)]
+#![feature(const_fn)]
 #![feature(const_raw_ptr_to_usize_cast)]
 #![feature(ptr_offset_from)]
 #![feature(const_in_array_repeat_expressions)]
+#![feature(ptr_internals)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 extern crate rlibc;
 

@@ -95,7 +95,7 @@ fn map_pages(
 }
 
 /// Set up kernel part of a page table.
-fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
+pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
     let data_vaddr = {
         extern "C" {
             static data: core::ffi::c_void;
@@ -174,12 +174,32 @@ pub fn switch_kvm() {
     x86::lcr3(v2p(kpg_dir).raw() as u32);
 }
 
-/// Deallocate user pages to bring the process size from old_sz to
-/// new_sz.  old_sz and new_sz need not be page-aligned, nor does new_sz
-/// need to be less than old_sz.  old_sz can be larger than the actual
-/// process size.  Returns the new process size.
-fn dealloc_uvm(_pg_dir: &mut PageDirectory, _old_sz: usize, _new_sz: usize) {
-    todo!()
+pub mod uvm {
+    use super::*;
+
+    /// Load the init_code into address 0 of pg_dir.
+    /// the size of init_code must be less than a page.
+    pub fn init(pg_dir: &mut pg_dir::PageDirectory, init_code: &[u8]) {
+        debug_assert!(init_code.len() >= PAGE_SIZE);
+        let mem = crate::kalloc::kalloc().unwrap();
+        unsafe { rlibc::memset(mem as *mut u8, 0, PAGE_SIZE) };
+        map_pages(
+            pg_dir,
+            VAddr::from_raw(0),
+            PAGE_SIZE,
+            v2p(VAddr::from(mem)),
+            ent_flag::WRITABLE | ent_flag::USER,
+        );
+        unsafe { core::ptr::copy(init_code.as_ptr(), mem as *mut u8, init_code.len()) };
+    }
+
+    /// Deallocate user pages to bring the process size from old_sz to
+    /// new_sz.  old_sz and new_sz need not be page-aligned, nor does new_sz
+    /// need to be less than old_sz.  old_sz can be larger than the actual
+    /// process size.  Returns the new process size.
+    pub fn dealloc(_pg_dir: &mut PageDirectory, _old_sz: usize, _new_sz: usize) {
+        todo!()
+    }
 }
 
 /// Free a page table and all the physical memory pages in the user part.
@@ -188,7 +208,7 @@ fn free_vm(pg_dir: *mut PageDirectory) {
         panic!("free_vm: no pg_dir");
     }
     let pg_dir = unsafe { &mut *pg_dir };
-    dealloc_uvm(pg_dir, KERNBASE.raw(), 0);
+    uvm::dealloc(pg_dir, KERNBASE.raw(), 0);
     for ent in pg_dir.iter() {
         if ent.flags_check(ent_flag::PRESENT) {
             let v = p2v(ent.addr());
