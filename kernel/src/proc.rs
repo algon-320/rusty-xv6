@@ -144,7 +144,7 @@ pub struct Process {
     pid: u32,                           // Process ID
     trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
     context: *mut Context,              // swtch() here to run process
-    pub cwd: InodeRef,                  // Current directory
+    pub cwd: Option<InodeRef>,          // Current directory
 
     name: [u8; 16], // Process name (debugging)
 }
@@ -158,7 +158,7 @@ impl Process {
             pid: u32::MAX,
             trap_frame: core::ptr::null_mut(),
             context: core::ptr::null_mut(),
-            cwd: InodeRef::dangling(),
+            cwd: None,
 
             name: [0; 16],
         }
