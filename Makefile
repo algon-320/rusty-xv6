@@ -51,7 +51,7 @@ build-image: $(BOOTLOADER_BIN) $(KERNEL_BIN)
 	dd if=$(KERNEL_BIN) of=$(IMAGE) seek=1 conv=notrunc status=none
 
 .PHONY: test
-test:
+test: $(INITCODE)
 	cd kernel; cargo test
 
 .PHONY: clean

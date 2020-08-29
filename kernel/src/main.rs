@@ -68,6 +68,7 @@ pub extern "C" fn main() {
     #[cfg(test)]
     {
         test_main();
+        loop {}
     }
     #[cfg(not(test))]
     {
