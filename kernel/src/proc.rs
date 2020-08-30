@@ -243,16 +243,16 @@ enum ProcessState {
     Zombie,
 }
 pub struct Process {
-    state: ProcessState,                // Process state
-    size: usize,                        // Size of process memory (bytes)
-    pg_dir: *mut pg_dir::PageDirectory, // Page table
-    kernel_stack: *mut u8,              // Bottom of kernel stack for this process
-    pid: u32,                           // Process ID
-    trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
-    context: *mut Context,              // swtch() here to run process
-    pub cwd: Option<InodeRef>,          // Current directory
+    state: ProcessState,                    // Process state
+    pub size: usize,                        // Size of process memory (bytes)
+    pub pg_dir: *mut pg_dir::PageDirectory, // Page table
+    pub kernel_stack: *mut u8,              // Bottom of kernel stack for this process
+    pub pid: u32,                           // Process ID
+    pub trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
+    pub context: *mut Context,              // swtch() here to run process
+    pub cwd: Option<InodeRef>,              // Current directory
 
-    name: [u8; 16], // Process name (debugging)
+    pub name: [u8; 16], // Process name (debugging)
 }
 impl Process {
     pub const fn zero() -> Self {
