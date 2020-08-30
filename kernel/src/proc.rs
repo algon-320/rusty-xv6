@@ -4,6 +4,7 @@ use super::memory::{pg_dir, seg};
 use super::trap;
 use core::cell::{RefCell, RefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use utils::prelude::*;
 use utils::x86;
 
 /// Task state segment format
@@ -396,38 +397,36 @@ fn alloc_proc() -> Option<*mut Process> {
 
 /// Set up first user process.
 pub fn user_init() {
+    const INIT_CODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/init.bin"));
+
+    use super::fs::inode;
     use super::memory::PAGE_SIZE;
     use super::vm;
 
-    const INIT_CODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/init.bin"));
-
     let p = alloc_proc().expect("user_init: out of memory");
-    unsafe {
-        let p = &mut *p;
-        p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
-        vm::uvm::init(&mut *p.pg_dir, INIT_CODE);
-        p.size = PAGE_SIZE;
-        {
-            let tf = &mut *p.trap_frame;
-            tf.cs = (seg::SEG_UCODE << 3) as u16 | seg::dpl::USER as u16;
-            let udata = (seg::SEG_UDATA << 3) as u16 | seg::dpl::USER as u16;
-            tf.ds = udata;
-            tf.es = udata;
-            tf.ss = udata;
-            tf.eflags = x86::eflags::FL_IF;
-            tf.esp = PAGE_SIZE;
-            tf.eip = 0; // begin of init
-        }
-        let name = b"init\0";
-        p.name[..name.len()].copy_from_slice(name);
-        p.cwd = super::fs::inode::from_name("/");
-        p.state = ProcessState::Runnable;
-
-        utils::log!("init = {:?}", p);
-
-        INIT_PROC = p;
-        PROC_TABLE.lock().put(p);
+    let p = unsafe { &mut *p };
+    p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
+    vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
+    p.size = PAGE_SIZE;
+    {
+        let tf = unsafe { &mut *p.trap_frame };
+        tf.cs = (seg::SEG_UCODE << 3) as u16 | seg::dpl::USER as u16;
+        let udata = (seg::SEG_UDATA << 3) as u16 | seg::dpl::USER as u16;
+        tf.ds = udata;
+        tf.es = udata;
+        tf.ss = udata;
+        tf.eflags = x86::eflags::FL_IF;
+        tf.esp = PAGE_SIZE;
+        tf.eip = 0; // begin of init
     }
+    let name = b"init\0";
+    p.name[..name.len()].copy_from_slice(name);
+    p.cwd = inode::from_name("/");
+    p.state = ProcessState::Runnable;
+
+    log!("init = {:?}", p);
+    unsafe { INIT_PROC = p };
+    PROC_TABLE.lock().put(p);
 }
 
 /// A fork child's very first scheduling by scheduler()
