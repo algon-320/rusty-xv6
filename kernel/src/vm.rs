@@ -30,7 +30,7 @@ pub fn seginit() {
     c.gdt[SEG_UDATA] = SegDesc::seg(seg_type::STA_W, 0, 0xFFFFFFFF, dpl::USER);
     x86::lgdt(
         c.gdt.as_ptr() as *const u8,
-        core::mem::size_of_val(&c.gdt) as u16,
+        core::mem::size_of::<[SegDesc; NSEGS]>() as u16,
     );
     dbg!(c.gdt.as_ptr());
 }
@@ -180,7 +180,7 @@ pub mod uvm {
     /// Load the init_code into address 0 of pg_dir.
     /// the size of init_code must be less than a page.
     pub fn init(pg_dir: &mut pg_dir::PageDirectory, init_code: &[u8]) {
-        debug_assert!(init_code.len() >= PAGE_SIZE);
+        assert!(init_code.len() < PAGE_SIZE);
         let mem = crate::kalloc::kalloc().unwrap();
         unsafe { rlibc::memset(mem as *mut u8, 0, PAGE_SIZE) };
         map_pages(
