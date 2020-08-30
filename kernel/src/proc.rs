@@ -6,8 +6,104 @@ use core::cell::{RefCell, RefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use utils::x86;
 
-#[derive(Debug)]
+/// Task state segment format
+#[repr(C)]
+pub struct TaskState {
+    /// Old ts selector
+    pub link: u32,
+    /// Stack pointers and segment selectors
+    pub esp0: u32,
+    /// after an increase in privilege level
+    pub ss0: u16,
+    _padding1: u16,
+    pub esp1: *mut u32,
+    pub ss1: u16,
+    _padding2: u16,
+    pub esp2: *mut u32,
+    pub ss2: u16,
+    _padding3: u16,
+    /// Page directory base
+    pub cr3: *mut u8,
+    /// Saved state from last task switch
+    pub eip: *mut u32,
+    pub eflags: u32,
+    /// More saved state (registers)
+    pub eax: u32,
+    pub ecx: u32,
+    pub edx: u32,
+    pub ebx: u32,
+    pub esp: *mut u32,
+    pub ebp: *mut u32,
+    pub esi: u32,
+    pub edi: u32,
+    /// Even more saved state (segment selectors)
+    pub es: u16,
+    _padding4: u16,
+    pub cs: u16,
+    _padding5: u16,
+    pub ss: u16,
+    _padding6: u16,
+    pub ds: u16,
+    _padding7: u16,
+    pub fs: u16,
+    _padding8: u16,
+    pub gs: u16,
+    _padding9: u16,
+    pub ldt: u16,
+    _padding10: u16,
+    /// Trap on task switch
+    pub t: u16,
+    /// I/O map base address
+    pub iomb: u16,
+}
+impl TaskState {
+    pub const fn zero() -> Self {
+        use core::ptr::null_mut;
+        Self {
+            link: 0,
+            esp0: 0,
+            ss0: 0,
+            _padding1: 0,
+            esp1: null_mut(),
+            ss1: 0,
+            _padding2: 0,
+            esp2: null_mut(),
+            ss2: 0,
+            _padding3: 0,
+            cr3: null_mut(),
+            eip: null_mut(),
+            eflags: 0,
+            eax: 0,
+            ecx: 0,
+            edx: 0,
+            ebx: 0,
+            esp: null_mut(),
+            ebp: null_mut(),
+            esi: 0,
+            edi: 0,
+            es: 0,
+            _padding4: 0,
+            cs: 0,
+            _padding5: 0,
+            ss: 0,
+            _padding6: 0,
+            ds: 0,
+            _padding7: 0,
+            fs: 0,
+            _padding8: 0,
+            gs: 0,
+            _padding9: 0,
+            ldt: 0,
+            _padding10: 0,
+            t: 0,
+            iomb: 0,
+        }
+    }
+}
+
 pub struct Cpu {
+    pub scheduler: *const Context,
+    pub task_state: TaskState,
     pub gdt: [seg::SegDesc; seg::NSEGS],
     pub num_cli: i32,
     pub int_enabled: bool,
@@ -25,6 +121,8 @@ impl CpuShared {
             apic_id: 0,
             started: AtomicBool::new(false),
             private: RefCell::new(Cpu {
+                scheduler: core::ptr::null(),
+                task_state: TaskState::zero(),
                 gdt: seg::GDT_ZERO,
                 num_cli: 0,
                 int_enabled: false,
@@ -106,7 +204,8 @@ pub fn my_cpu() -> RefMut<'static, Cpu> {
 /// The layout of the context matches the layout of the stack in swtch.S
 /// at the "Switch stacks" comment. Switch doesn't save eip explicitly,
 /// but it is on the stack and alloc_proc() manipulates it.
-struct Context {
+#[repr(C)]
+pub struct Context {
     edi: u32,
     esi: u32,
     ebx: u32,
