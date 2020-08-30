@@ -150,6 +150,8 @@ trapret:
     popl %fs
     popl %es
     popl %ds
-    addl $0x8, %esp  # trapno and errcode
-    iret
+    addl $0x8, %esp  # trap_no and err
+    iret             # pop %eip, %cs, %eflags
+                     # (and also %esp, %ss when crossing rings)
+                     # then return
 "#}
