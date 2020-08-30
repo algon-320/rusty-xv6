@@ -131,6 +131,13 @@ pub fn lapic_id() -> Option<u8> {
     Some(((LapicReg::ID.read() >> 24) & 0xFF) as u8)
 }
 
+/// Acknowledge interrupt.
+pub fn eoi() {
+    if unsafe { LAPIC.is_some() } {
+        LapicReg::EOI.write(0);
+    }
+}
+
 /// Spin for a given number of microseconds.
 /// On real hardware would want to tune this dynamically.
 pub fn micro_delay(_us: u32) {}

@@ -323,6 +323,17 @@ impl ProcessTable {
         }
         None
     }
+
+    pub fn get_runnable(&mut self) -> Option<*mut Process> {
+        for slot in self.table.iter_mut() {
+            if let Some(p) = slot {
+                if unsafe { (*(*p)).state == ProcessState::Runnable } {
+                    return slot.take();
+                }
+            }
+        }
+        None
+    }
 }
 unsafe impl Send for ProcessTable {}
 
@@ -429,9 +440,88 @@ pub fn user_init() {
     PROC_TABLE.lock().put(p);
 }
 
+/// Save the current registers on the stack, creating
+/// a struct context, and save its address in *old.
+/// Switch stacks to new and pop previously-saved registers.
+extern "C" {
+    fn switch(old: *mut *const Context, new: *const Context);
+}
+global_asm! {r#"
+.global switch
+switch:
+    movl    4(%esp), %eax
+    movl    8(%esp), %edx
+
+    # Save old callee-saved registers
+    pushl   %ebp
+    pushl   %ebx
+    pushl   %esi
+    pushl   %edi
+
+    # Swtich stacks
+    movl    %esp, (%eax) # save context
+    movl    %edx, %esp   # load context
+
+    # Load new callee-saved registers
+    popl    %edi
+    popl    %esi
+    popl    %ebx
+    popl    %ebp
+    ret
+"#}
+
+/// Per-CPU process scheduler.
+/// Each CPU calls scheduler() after setting itself up.
+/// Scheduler never returns. It loops, doing:
+///   - choose a process to run
+///   - switch to start running that process
+///   - eventually that process transfers control
+///       via switch back to the scheduler.
+pub fn scheduler() -> ! {
+    println!(print_color::CYAN; "[cpu:{}] scheduler start", my_cpu_id());
+
+    use super::lock::cli;
+    use super::vm;
+
+    // Enable interrupts on this processor.
+    x86::sti();
+
+    loop {
+        cli(|| {
+            my_cpu().current_proc = core::ptr::null_mut();
+        });
+
+        let p = match PROC_TABLE.lock().get_runnable() {
+            Some(p) => p,
+            _ => continue,
+        };
+        cli(|| {
+            my_cpu().current_proc = p;
+        });
+        vm::uvm::switch(p);
+        unsafe { (*p).state = ProcessState::Running };
+
+        // switching
+        let sched_ctx = cli(|| {
+            let mut cpu = my_cpu();
+            &mut cpu.scheduler as *mut _
+        });
+        unsafe { switch(sched_ctx, (*p).context) };
+
+        vm::switch_kvm();
+    }
+}
+
 /// A fork child's very first scheduling by scheduler()
-/// will swtch here.  "Return" to user space.
+/// will switch here. "Return" to user space.
 #[no_mangle]
 extern "C" fn forkret() {
-    todo!()
+    static FIRST_TIME: AtomicBool = AtomicBool::new(true);
+    if FIRST_TIME.compare_and_swap(true, false, Ordering::SeqCst) {
+        // Some initialization functions must be run in the context
+        // of a regular process (e.g., they call sleep), and thus cannot
+        // be run from main().
+        todo!()
+    }
+    // Return to "caller", actually trapret (see alloc_proc).
 }
