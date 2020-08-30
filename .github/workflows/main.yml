@@ -19,20 +19,6 @@ jobs:
         override: true
         components: rust-src
 
-    - name: build-bootloader
+    - name: build-image
       run: >-
-        RUSTFLAGS='-C link-args=-Tbootloader.ld'
-        cargo build
-        -Z build-std=core
-        --target ../i386.json
-        --release
-      working-directory: ./bootloader
-
-    - name: build-kernel
-      run: >-
-        RUSTFLAGS='-C link-args=-Tkernel.ld'
-        cargo build
-        -Z build-std=core
-        --target ../i386.json
-        --release
-      working-directory: ./kernel
+        make build-image
