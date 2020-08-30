@@ -26,12 +26,14 @@ qemu: build-image ./fs.img
     -smp 2 -m 512 -serial mon:stdio
 
 .PHONY: gdb
-gdb: build-image
+gdb: build-image ./fs.img
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
     -drive file=fs.img,index=1,media=disk,format=raw\
-    -smp 2 -m 512 -S -gdb tcp::$(GDB_PORT) & \
-    $(GDB_EXTERN_TERM) gdb $(KERNEL_BIN) -ex "target remote localhost:$(GDB_PORT)"
+    -smp 1 -m 512 -S -gdb tcp::$(GDB_PORT) -serial mon:stdio
+.PHONY: gdb-attach
+gdb-attach:
+	$(GDB_EXTERN_TERM) gdb $(KERNEL_BIN) -ex "target remote localhost:$(GDB_PORT)"
 
 $(BOOTLOADER_BIN): $(BOOTLOADER_DEPS)
 	cd bootloader; cargo build --release
