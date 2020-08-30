@@ -341,10 +341,7 @@ pub fn init() {
 /// Disable interrupts so that we are not rescheduled
 /// while reading proc from the cpu structure
 pub fn my_proc() -> *mut Process {
-    super::lock::push_cli();
-    let p = my_cpu().current_proc;
-    super::lock::pop_cli();
-    p
+    super::lock::cli(|| my_cpu().current_proc)
 }
 
 /// Look in the process table for an UNUSED proc.
