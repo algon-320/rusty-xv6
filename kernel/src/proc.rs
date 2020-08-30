@@ -102,16 +102,23 @@ impl TaskState {
 }
 
 pub struct Cpu {
+    /// switch() here to enter scheduler
     pub scheduler: *const Context,
+    /// Used by x86 to find stack for interrupt
     pub task_state: TaskState,
+    /// x86 global descriptor table
     pub gdt: [seg::SegDesc; seg::NSEGS],
+    /// Depth of push_cli nesting.
     pub num_cli: i32,
+    /// Were interrupts enabled before push_cli?
     pub int_enabled: bool,
+    /// The process running on this cpu or null
     pub current_proc: *mut Process,
 }
 pub struct CpuShared {
     /// Local APIC ID
     pub apic_id: u8,
+    /// Has the CPU started?
     pub started: AtomicBool,
     pub private: RefCell<Cpu>,
 }
