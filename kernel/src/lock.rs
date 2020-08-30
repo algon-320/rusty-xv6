@@ -234,3 +234,12 @@ pub fn pop_cli() {
         x86::sti();
     }
 }
+pub fn cli<F, R>(f: F) -> R
+where
+    F: Fn() -> R,
+{
+    push_cli();
+    let r = f();
+    pop_cli();
+    r
+}

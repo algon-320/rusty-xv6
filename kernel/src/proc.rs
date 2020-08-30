@@ -4,18 +4,122 @@ use super::memory::{pg_dir, seg};
 use super::trap;
 use core::cell::{RefCell, RefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use utils::prelude::*;
 use utils::x86;
 
-#[derive(Debug)]
+/// Task state segment format
+#[repr(C)]
+pub struct TaskState {
+    /// Old ts selector
+    pub link: u32,
+    /// Stack pointers and segment selectors
+    pub esp0: u32,
+    /// after an increase in privilege level
+    pub ss0: u16,
+    _padding1: u16,
+    pub esp1: *mut u32,
+    pub ss1: u16,
+    _padding2: u16,
+    pub esp2: *mut u32,
+    pub ss2: u16,
+    _padding3: u16,
+    /// Page directory base
+    pub cr3: *mut u8,
+    /// Saved state from last task switch
+    pub eip: *mut u32,
+    pub eflags: u32,
+    /// More saved state (registers)
+    pub eax: u32,
+    pub ecx: u32,
+    pub edx: u32,
+    pub ebx: u32,
+    pub esp: *mut u32,
+    pub ebp: *mut u32,
+    pub esi: u32,
+    pub edi: u32,
+    /// Even more saved state (segment selectors)
+    pub es: u16,
+    _padding4: u16,
+    pub cs: u16,
+    _padding5: u16,
+    pub ss: u16,
+    _padding6: u16,
+    pub ds: u16,
+    _padding7: u16,
+    pub fs: u16,
+    _padding8: u16,
+    pub gs: u16,
+    _padding9: u16,
+    pub ldt: u16,
+    _padding10: u16,
+    /// Trap on task switch
+    pub t: u16,
+    /// I/O map base address
+    pub iomb: u16,
+}
+impl TaskState {
+    pub const fn zero() -> Self {
+        use core::ptr::null_mut;
+        Self {
+            link: 0,
+            esp0: 0,
+            ss0: 0,
+            _padding1: 0,
+            esp1: null_mut(),
+            ss1: 0,
+            _padding2: 0,
+            esp2: null_mut(),
+            ss2: 0,
+            _padding3: 0,
+            cr3: null_mut(),
+            eip: null_mut(),
+            eflags: 0,
+            eax: 0,
+            ecx: 0,
+            edx: 0,
+            ebx: 0,
+            esp: null_mut(),
+            ebp: null_mut(),
+            esi: 0,
+            edi: 0,
+            es: 0,
+            _padding4: 0,
+            cs: 0,
+            _padding5: 0,
+            ss: 0,
+            _padding6: 0,
+            ds: 0,
+            _padding7: 0,
+            fs: 0,
+            _padding8: 0,
+            gs: 0,
+            _padding9: 0,
+            ldt: 0,
+            _padding10: 0,
+            t: 0,
+            iomb: 0,
+        }
+    }
+}
+
 pub struct Cpu {
+    /// switch() here to enter scheduler
+    pub scheduler: *const Context,
+    /// Used by x86 to find stack for interrupt
+    pub task_state: TaskState,
+    /// x86 global descriptor table
     pub gdt: [seg::SegDesc; seg::NSEGS],
+    /// Depth of push_cli nesting.
     pub num_cli: i32,
+    /// Were interrupts enabled before push_cli?
     pub int_enabled: bool,
+    /// The process running on this cpu or null
     pub current_proc: *mut Process,
 }
 pub struct CpuShared {
     /// Local APIC ID
     pub apic_id: u8,
+    /// Has the CPU started?
     pub started: AtomicBool,
     pub private: RefCell<Cpu>,
 }
@@ -25,6 +129,8 @@ impl CpuShared {
             apic_id: 0,
             started: AtomicBool::new(false),
             private: RefCell::new(Cpu {
+                scheduler: core::ptr::null(),
+                task_state: TaskState::zero(),
                 gdt: seg::GDT_ZERO,
                 num_cli: 0,
                 int_enabled: false,
@@ -106,7 +212,8 @@ pub fn my_cpu() -> RefMut<'static, Cpu> {
 /// The layout of the context matches the layout of the stack in swtch.S
 /// at the "Switch stacks" comment. Switch doesn't save eip explicitly,
 /// but it is on the stack and alloc_proc() manipulates it.
-struct Context {
+#[repr(C)]
+pub struct Context {
     edi: u32,
     esi: u32,
     ebx: u32,
@@ -137,16 +244,16 @@ enum ProcessState {
     Zombie,
 }
 pub struct Process {
-    state: ProcessState,                // Process state
-    size: usize,                        // Size of process memory (bytes)
-    pg_dir: *mut pg_dir::PageDirectory, // Page table
-    kernel_stack: *mut u8,              // Bottom of kernel stack for this process
-    pid: u32,                           // Process ID
-    trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
-    context: *mut Context,              // swtch() here to run process
-    pub cwd: Option<InodeRef>,          // Current directory
+    state: ProcessState,                    // Process state
+    pub size: usize,                        // Size of process memory (bytes)
+    pub pg_dir: *mut pg_dir::PageDirectory, // Page table
+    pub kernel_stack: *mut u8,              // Bottom of kernel stack for this process
+    pub pid: u32,                           // Process ID
+    pub trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
+    pub context: *mut Context,              // swtch() here to run process
+    pub cwd: Option<InodeRef>,              // Current directory
 
-    name: [u8; 16], // Process name (debugging)
+    pub name: [u8; 16], // Process name (debugging)
 }
 impl Process {
     pub const fn zero() -> Self {
@@ -162,6 +269,9 @@ impl Process {
 
             name: [0; 16],
         }
+    }
+    pub fn is_valid(&self) -> bool {
+        !self.pg_dir.is_null() && !self.kernel_stack.is_null()
     }
 }
 impl core::fmt::Debug for Process {
@@ -213,6 +323,17 @@ impl ProcessTable {
         }
         None
     }
+
+    pub fn get_runnable(&mut self) -> Option<*mut Process> {
+        for slot in self.table.iter_mut() {
+            if let Some(p) = slot {
+                if unsafe { (*(*p)).state == ProcessState::Runnable } {
+                    return slot.take();
+                }
+            }
+        }
+        None
+    }
 }
 unsafe impl Send for ProcessTable {}
 
@@ -234,10 +355,7 @@ pub fn init() {
 /// Disable interrupts so that we are not rescheduled
 /// while reading proc from the cpu structure
 pub fn my_proc() -> *mut Process {
-    super::lock::push_cli();
-    let p = my_cpu().current_proc;
-    super::lock::pop_cli();
-    p
+    super::lock::cli(|| my_cpu().current_proc)
 }
 
 /// Look in the process table for an UNUSED proc.
@@ -290,43 +408,120 @@ fn alloc_proc() -> Option<*mut Process> {
 
 /// Set up first user process.
 pub fn user_init() {
+    const INIT_CODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/init.bin"));
+
+    use super::fs::inode;
     use super::memory::PAGE_SIZE;
     use super::vm;
 
-    const INIT_CODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/init.bin"));
-
     let p = alloc_proc().expect("user_init: out of memory");
-    unsafe {
-        let p = &mut *p;
-        p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
-        vm::uvm::init(&mut *p.pg_dir, INIT_CODE);
-        p.size = PAGE_SIZE;
-        {
-            let tf = &mut *p.trap_frame;
-            tf.cs = (seg::SEG_UCODE << 3) as u16 | seg::dpl::USER as u16;
-            let udata = (seg::SEG_UDATA << 3) as u16 | seg::dpl::USER as u16;
-            tf.ds = udata;
-            tf.es = udata;
-            tf.ss = udata;
-            tf.eflags = x86::eflags::FL_IF;
-            tf.esp = PAGE_SIZE;
-            tf.eip = 0; // begin of init
-        }
-        let name = b"init\0";
-        p.name[..name.len()].copy_from_slice(name);
-        p.cwd = super::fs::inode::from_name("/");
-        p.state = ProcessState::Runnable;
+    let p = unsafe { &mut *p };
+    p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
+    vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
+    p.size = PAGE_SIZE;
+    {
+        let tf = unsafe { &mut *p.trap_frame };
+        tf.cs = (seg::SEG_UCODE << 3) as u16 | seg::dpl::USER as u16;
+        let udata = (seg::SEG_UDATA << 3) as u16 | seg::dpl::USER as u16;
+        tf.ds = udata;
+        tf.es = udata;
+        tf.ss = udata;
+        tf.eflags = x86::eflags::FL_IF;
+        tf.esp = PAGE_SIZE;
+        tf.eip = 0; // begin of init
+    }
+    let name = b"init\0";
+    p.name[..name.len()].copy_from_slice(name);
+    p.cwd = inode::from_name("/");
+    p.state = ProcessState::Runnable;
 
-        utils::log!("init = {:?}", p);
+    log!("init = {:?}", p);
+    unsafe { INIT_PROC = p };
+    PROC_TABLE.lock().put(p);
+}
 
-        INIT_PROC = p;
-        PROC_TABLE.lock().put(p);
+/// Save the current registers on the stack, creating
+/// a struct context, and save its address in *old.
+/// Switch stacks to new and pop previously-saved registers.
+extern "C" {
+    fn switch(old: *mut *const Context, new: *const Context);
+}
+global_asm! {r#"
+.global switch
+switch:
+    movl    4(%esp), %eax
+    movl    8(%esp), %edx
+
+    # Save old callee-saved registers
+    pushl   %ebp
+    pushl   %ebx
+    pushl   %esi
+    pushl   %edi
+
+    # Swtich stacks
+    movl    %esp, (%eax) # save context
+    movl    %edx, %esp   # load context
+
+    # Load new callee-saved registers
+    popl    %edi
+    popl    %esi
+    popl    %ebx
+    popl    %ebp
+    ret
+"#}
+
+/// Per-CPU process scheduler.
+/// Each CPU calls scheduler() after setting itself up.
+/// Scheduler never returns. It loops, doing:
+///   - choose a process to run
+///   - switch to start running that process
+///   - eventually that process transfers control
+///       via switch back to the scheduler.
+pub fn scheduler() -> ! {
+    println!(print_color::CYAN; "[cpu:{}] scheduler start", my_cpu_id());
+
+    use super::lock::cli;
+    use super::vm;
+
+    // Enable interrupts on this processor.
+    x86::sti();
+
+    loop {
+        cli(|| {
+            my_cpu().current_proc = core::ptr::null_mut();
+        });
+
+        let p = match PROC_TABLE.lock().get_runnable() {
+            Some(p) => p,
+            _ => continue,
+        };
+        cli(|| {
+            my_cpu().current_proc = p;
+        });
+        vm::uvm::switch(p);
+        unsafe { (*p).state = ProcessState::Running };
+
+        // switching
+        let sched_ctx = cli(|| {
+            let mut cpu = my_cpu();
+            &mut cpu.scheduler as *mut _
+        });
+        unsafe { switch(sched_ctx, (*p).context) };
+
+        vm::switch_kvm();
     }
 }
 
 /// A fork child's very first scheduling by scheduler()
-/// will swtch here.  "Return" to user space.
+/// will switch here. "Return" to user space.
 #[no_mangle]
 extern "C" fn forkret() {
-    todo!()
+    static FIRST_TIME: AtomicBool = AtomicBool::new(true);
+    if FIRST_TIME.compare_and_swap(true, false, Ordering::SeqCst) {
+        // Some initialization functions must be run in the context
+        // of a regular process (e.g., they call sleep), and thus cannot
+        // be run from main().
+        todo!()
+    }
+    // Return to "caller", actually trapret (see alloc_proc).
 }

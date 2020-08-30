@@ -212,6 +212,7 @@ pub mod seg {
             self
         }
 
+        /// Normal segment (limit is in 4 KiB blocks)
         #[inline]
         pub const fn seg(ty: u8, base: u32, lim: u32, dpl: u8) -> Self {
             Self::new()
@@ -219,6 +220,15 @@ pub mod seg {
                 .set_lim(lim >> 12)
                 .set_access_byte(0b10010000 | ((dpl & 0b11) << 5) | ty)
                 .set_flags(0b1100)
+        }
+        /// Task State Segment (limit is in 1B blocks)
+        #[inline]
+        pub fn tss(ty: u8, base: u32, lim: u32, dpl: u8) -> Self {
+            Self::new()
+                .set_base(base)
+                .set_lim(lim)
+                .set_access_byte(0b10000000 | ((dpl & 0b11) << 5) | ty)
+                .set_flags(0b0100)
         }
     }
 }

@@ -42,13 +42,13 @@ enum LapicReg {
     TDCR = 0x03E0 / 4,
 }
 impl LapicReg {
-    pub unsafe fn write(self, value: u32) {
-        core::ptr::write_volatile(LAPIC.unwrap().add(self as usize), value);
+    pub fn write(self, value: u32) {
+        unsafe { core::ptr::write_volatile(LAPIC.unwrap().add(self as usize), value) };
         // wait for write to finish, by reading
         LapicReg::ID.read();
     }
-    pub unsafe fn read(self) -> u32 {
-        core::ptr::read_volatile(LAPIC.unwrap().add(self as usize))
+    pub fn read(self) -> u32 {
+        unsafe { core::ptr::read_volatile(LAPIC.unwrap().add(self as usize)) }
     }
 }
 
@@ -84,53 +84,58 @@ pub fn init() {
         return;
     }
 
-    unsafe {
-        use super::trap;
+    use super::trap;
 
-        // Enable local APIC; spurious interrupt vector.
-        LapicReg::SVR.write(ENABLE | (trap::T_IRQ0 + trap::IRQ_SPURIOUS));
+    // Enable local APIC; spurious interrupt vector.
+    LapicReg::SVR.write(ENABLE | (trap::T_IRQ0 + trap::IRQ_SPURIOUS));
 
-        // The timer repeatedly counts down at bus frequency
-        // from lapic[TICR] and then issues an interrupt.
-        // If xv6 cared more about precise timekeeping,
-        // TICR would be calibrated using an external time source.
-        LapicReg::TDCR.write(X1);
-        LapicReg::TIMER.write(PERIODIC | (trap::T_IRQ0 + trap::IRQ_TIMER));
-        LapicReg::TICR.write(10000000);
+    // The timer repeatedly counts down at bus frequency
+    // from lapic[TICR] and then issues an interrupt.
+    // If xv6 cared more about precise timekeeping,
+    // TICR would be calibrated using an external time source.
+    LapicReg::TDCR.write(X1);
+    LapicReg::TIMER.write(PERIODIC | (trap::T_IRQ0 + trap::IRQ_TIMER));
+    LapicReg::TICR.write(10000000);
 
-        // Disable logical interrupt lines.
-        LapicReg::LINT0.write(MASKED);
-        LapicReg::LINT1.write(MASKED);
+    // Disable logical interrupt lines.
+    LapicReg::LINT0.write(MASKED);
+    LapicReg::LINT1.write(MASKED);
 
-        // Disable performance counter overflow interrupts
-        // on machines that provide that interrupt entry.
-        if ((LapicReg::VER.read() >> 16) & 0xFF) >= 4 {
-            LapicReg::PCINT.write(MASKED);
-        }
-
-        // Map error interrupt to IRQ_ERROR
-        LapicReg::ERROR.write(trap::T_IRQ0 + trap::IRQ_ERROR);
-
-        // Clear error status register (requires back-to-back writes).
-        LapicReg::ESR.write(0);
-        LapicReg::ESR.write(0);
-
-        // Ack any outstanding interrupts.
-        LapicReg::EOI.write(0);
-
-        // Send an Init Level De-Assert to synchronize arbitration ID's.
-        LapicReg::ICRHI.write(0);
-        LapicReg::ICRLO.write(BCAST | INIT | LEVEL);
-        while LapicReg::ICRLO.read() & DELIVS > 0 {}
-
-        // Enable interrupts on the APIC (but not on the processor).
-        LapicReg::TPR.write(0);
+    // Disable performance counter overflow interrupts
+    // on machines that provide that interrupt entry.
+    if ((LapicReg::VER.read() >> 16) & 0xFF) >= 4 {
+        LapicReg::PCINT.write(MASKED);
     }
+
+    // Map error interrupt to IRQ_ERROR
+    LapicReg::ERROR.write(trap::T_IRQ0 + trap::IRQ_ERROR);
+
+    // Clear error status register (requires back-to-back writes).
+    LapicReg::ESR.write(0);
+    LapicReg::ESR.write(0);
+
+    // Ack any outstanding interrupts.
+    LapicReg::EOI.write(0);
+
+    // Send an Init Level De-Assert to synchronize arbitration ID's.
+    LapicReg::ICRHI.write(0);
+    LapicReg::ICRLO.write(BCAST | INIT | LEVEL);
+    while LapicReg::ICRLO.read() & DELIVS > 0 {}
+
+    // Enable interrupts on the APIC (but not on the processor).
+    LapicReg::TPR.write(0);
 }
 
 pub fn lapic_id() -> Option<u8> {
     unsafe { LAPIC? };
-    Some(((unsafe { LapicReg::ID.read() } >> 24) & 0xFF) as u8)
+    Some(((LapicReg::ID.read() >> 24) & 0xFF) as u8)
+}
+
+/// Acknowledge interrupt.
+pub fn eoi() {
+    if unsafe { LAPIC.is_some() } {
+        LapicReg::EOI.write(0);
+    }
 }
 
 /// Spin for a given number of microseconds.
@@ -163,13 +168,11 @@ pub fn start_ap(apic_id: u8, addr: PAddr<*mut core::ffi::c_void>) {
 
     // "Universal startup algorithm."
     // Send INIT (level-triggered) interrupt to reset other CPU.
-    unsafe {
-        LapicReg::ICRHI.write((apic_id as u32) << 24);
-        LapicReg::ICRLO.write(INIT | LEVEL | ASSERT);
-        micro_delay(200);
-        LapicReg::ICRLO.write(INIT | LEVEL);
-        micro_delay(100);
-    }
+    LapicReg::ICRHI.write((apic_id as u32) << 24);
+    LapicReg::ICRLO.write(INIT | LEVEL | ASSERT);
+    micro_delay(200);
+    LapicReg::ICRLO.write(INIT | LEVEL);
+    micro_delay(100);
 
     // Send startup IPI (twice!) to enter code.
     // Regular hardware is supposed to only accept a STARTUP
@@ -177,10 +180,8 @@ pub fn start_ap(apic_id: u8, addr: PAddr<*mut core::ffi::c_void>) {
     // should be ignored, but it is part of the official Intel algorithm.
     // Bochs complains about the second one.  Too bad for Bochs.
     for _ in 0..2 {
-        unsafe {
-            LapicReg::ICRHI.write((apic_id as u32) << 24);
-            LapicReg::ICRLO.write(STARTUP | (addr.raw() as u32 >> 12));
-            micro_delay(200);
-        }
+        LapicReg::ICRHI.write((apic_id as u32) << 24);
+        LapicReg::ICRLO.write(STARTUP | (addr.raw() as u32 >> 12));
+        micro_delay(200);
     }
 }

@@ -113,8 +113,10 @@ pub fn idt_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn trap(_trap_frame: *const TrapFrame) {
-    todo!()
+pub extern "C" fn trap(trap_frame: *const TrapFrame) {
+    // use super::proc::my_cpu_id;
+    // utils::log!("[cpu:{}] trap", my_cpu_id());
+    super::lapic::eoi();
 }
 
 extern "C" {

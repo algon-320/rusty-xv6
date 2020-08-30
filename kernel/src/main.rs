@@ -64,7 +64,7 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn main() {
+pub extern "C" fn main() -> ! {
     #[cfg(test)]
     {
         test_main();
@@ -109,14 +109,14 @@ extern "C" fn mp_enter() {
 }
 
 // Common CPU setup code.
-fn mp_main() {
+fn mp_main() -> ! {
     use core::sync::atomic::Ordering;
     use proc::{cpus, my_cpu_id};
     log!("cpu{}: starting", my_cpu_id());
     trap::idt_init(); // load idt register
     let id = my_cpu_id() as usize;
     cpus()[id].started.store(true, Ordering::SeqCst); // tell start_others() we're up
-    todo!()
+    proc::scheduler(); // start running processes
 }
 
 fn start_others() {
@@ -202,6 +202,7 @@ fn test_runner(tests: &[&dyn Fn()]) {
 #[panic_handler]
 #[no_mangle]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    x86::cli(); // stop interruption
     println!(print_color::LIGHT_RED; "{}", info);
     loop {}
 }
