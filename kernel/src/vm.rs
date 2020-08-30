@@ -176,6 +176,11 @@ pub fn switch_kvm() {
 
 pub mod uvm {
     use super::*;
+    use crate::lock::cli;
+    use crate::memory::{seg, v2p, KSTACKSIZE};
+    use crate::proc::{my_cpu, Process, TaskState};
+    use core::mem::size_of;
+    use utils::x86;
 
     /// Load the init_code into address 0 of pg_dir.
     /// the size of init_code must be less than a page.
@@ -191,6 +196,29 @@ pub mod uvm {
             ent_flag::WRITABLE | ent_flag::USER,
         );
         unsafe { core::ptr::copy(init_code.as_ptr(), mem as *mut u8, init_code.len()) };
+    }
+
+    /// Switch TSS and h/w page table to correspond to process p.
+    pub fn switch(p: *mut Process) {
+        assert!(!p.is_null(), "switch_uvm: no process");
+        assert!(unsafe { (*p).is_valid() }, "switch_uvm: no process");
+
+        cli(|| unsafe {
+            let mut cpu = my_cpu();
+            cpu.gdt[seg::SEG_TSS] = seg::SegDesc::tss(
+                seg::seg_type::STS_T32A,
+                &cpu.task_state as *const _ as u32,
+                (size_of::<TaskState>() - 1) as u32,
+                0,
+            );
+            cpu.task_state.ss0 = (seg::SEG_KDATA as u16) << 3;
+            cpu.task_state.esp0 = (*p).kernel_stack.add(KSTACKSIZE) as u32;
+            // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
+            // forbids I/O instructions (e.g., inb and outb) from user space
+            cpu.task_state.iomb = 0xFFFF;
+            x86::ltr((seg::SEG_TSS as u16) << 3);
+            x86::lcr3(v2p(VAddr::from((*p).pg_dir)).raw() as u32);
+        });
     }
 
     /// Deallocate user pages to bring the process size from old_sz to

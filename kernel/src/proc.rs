@@ -270,6 +270,9 @@ impl Process {
             name: [0; 16],
         }
     }
+    pub fn is_valid(&self) -> bool {
+        !self.pg_dir.is_null() && !self.kernel_stack.is_null()
+    }
 }
 impl core::fmt::Debug for Process {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
