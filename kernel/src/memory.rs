@@ -202,7 +202,7 @@ pub mod seg {
         }
         #[inline]
         pub const fn set_flags(mut self, flags: u8) -> Self {
-            let flags = (flags & 0xF0) as u32; // [gr, sz, 0, 0]
+            let flags = (flags & 0x0F) as u32; // [gr, sz, 0, 0]
             self.f2 = (self.f2 & 0xFF0FFFFF) | (flags << 20);
             self
         }
@@ -216,7 +216,7 @@ pub mod seg {
         pub const fn seg(ty: u8, base: u32, lim: u32, dpl: u8) -> Self {
             Self::new()
                 .set_base(base)
-                .set_lim(lim)
+                .set_lim(lim >> 12)
                 .set_access_byte(0b10010000 | ((dpl & 0b11) << 5) | ty)
                 .set_flags(0b1100)
         }
@@ -241,7 +241,7 @@ pub mod gate {
             self
         }
         pub fn set_selector(mut self, selector: u16) -> Self {
-            self.f1 = (self.f1 & 0x0000FFFF) | (selector as u32);
+            self.f1 = (self.f1 & 0x0000FFFF) | ((selector as u32) << 16);
             self
         }
         pub fn set_type_attribute(mut self, type_attr: u8) -> Self {

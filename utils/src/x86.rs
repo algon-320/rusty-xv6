@@ -193,6 +193,17 @@ pub fn lidt(gate_desc: *const u8, sz: u16) {
     }
 }
 
+#[inline]
+pub fn ltr(sel: u16) {
+    unsafe {
+        llvm_asm!("ltr $0"
+            :
+            : "r"(sel)
+            :
+            : "volatile");
+    }
+}
+
 /// do nothing
 #[inline]
 pub fn nop() {
