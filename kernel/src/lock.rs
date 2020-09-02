@@ -66,11 +66,10 @@ pub mod spin {
 
         /// Check whether this cpu is holding the lock.
         fn holding(&self) -> bool {
-            super::push_cli();
-            let r = self.locked.load(Ordering::Relaxed)
-                && self.cpu.load(Ordering::Relaxed) == my_cpu_id() as i8;
-            super::pop_cli();
-            r
+            super::cli(|| {
+                self.locked.load(Ordering::Relaxed)
+                    && self.cpu.load(Ordering::Relaxed) == my_cpu_id() as i8
+            })
         }
     }
 

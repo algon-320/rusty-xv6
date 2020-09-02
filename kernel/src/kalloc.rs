@@ -21,7 +21,7 @@ impl Kmem {
     {
         if self.use_lock.load(Ordering::SeqCst) {
             self.lock.acquire();
-            let r = unsafe { f(&mut *self.free_list.get()) };
+            let r = f(unsafe { &mut *self.free_list.get() });
             self.lock.release();
             r
         } else {
@@ -55,15 +55,15 @@ pub fn init2(start: VAddr<u8>, end: VAddr<u8>) {
 
 fn free_range(start: VAddr<u8>, end: VAddr<u8>) {
     log!("free_range: start:{:p}, end:{:p}", start.ptr(), end.ptr());
-    let page = start.round_up(PAGE_SIZE);
-    let mut page = page.cast::<Page>();
+    let mut page = start.round_up(PAGE_SIZE).cast::<Page>();
+    let end = end.round_down(PAGE_SIZE).cast::<Page>();
     let mut avail_page = 0;
-    while (page + 1).cast() <= end {
+    while page < end {
         kfree(page.mut_ptr());
         page += 1;
         avail_page += 1;
     }
-    log!("{} pages available", avail_page);
+    log!("+{} pages", avail_page);
 }
 
 /// Free the page of physical memory pointed at by page,
@@ -72,7 +72,7 @@ fn free_range(start: VAddr<u8>, end: VAddr<u8>) {
 pub fn kfree(page: *mut Page) {
     extern "C" {
         ///  first address after kernel loaded from ELF file
-        static kernel_end: core::ffi::c_void;
+        static kernel_end: u8;
     }
     let end = unsafe { &kernel_end as *const _ as usize };
     assert!(page as usize >= end);
@@ -95,10 +95,10 @@ pub fn kalloc() -> Option<*mut Page> {
     KMEM.with(|free_list| {
         let r = *free_list;
         if !r.is_null() {
-            unsafe { *free_list = (*r).next };
+            *free_list = unsafe { (*r).next };
             Some(r as *mut Page)
         } else {
-            log!("kalloc failed: returning null");
+            log!("kalloc failed: returning None");
             None
         }
     })

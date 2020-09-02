@@ -36,7 +36,12 @@ impl Mp {
         if self.conf_addr.is_null() {
             return None;
         }
-        Some(unsafe { &*p2v(self.conf_addr).ptr() })
+        let conf = unsafe { &*p2v(self.conf_addr).ptr() };
+        if conf.verify() {
+            Some(conf)
+        } else {
+            None
+        }
     }
 }
 
@@ -122,11 +127,9 @@ struct MpIoApic {
 
 /// sum up given bytes
 unsafe fn sum(p: *const u8, len: usize) -> u8 {
-    let mut ret = 0u8;
-    for i in 0..len {
-        ret = ret.wrapping_add(*(p.add(i)));
-    }
-    ret
+    core::slice::from_raw_parts(p, len)
+        .iter()
+        .fold(0, |acc, x| acc.wrapping_add(*x))
 }
 
 /// Search for the MP Floating Pointer Structure, which according to the
@@ -137,7 +140,6 @@ unsafe fn sum(p: *const u8, len: usize) -> u8 {
 fn search() -> Option<*const Mp> {
     /// Look for an MP structure in the len bytes at addr.
     unsafe fn search1(addr: PAddr<u8>, len: usize) -> Option<*const Mp> {
-        const MP_SZ: usize = size_of::<Mp>();
         let mut addr = p2v(addr);
         let end = addr + len;
         while addr < end {
@@ -145,26 +147,24 @@ fn search() -> Option<*const Mp> {
             if (*mp).verify() {
                 return Some(mp);
             }
-            addr += MP_SZ;
+            addr += size_of::<Mp>();
         }
         None
     }
 
     // 0x40E (1 ward): EBDA base address >> 4 (usually!)
-    let ebda_addr = unsafe { (*p2v(PAddr::<u16>::from_raw(0x40E)).ptr() as usize) << 4 };
-    let ebda: PAddr<u8> = PAddr::from_raw(ebda_addr);
-    if !ebda.is_null() {
-        if let Some(mp) = unsafe { search1(ebda, 1024) } {
-            return Some(mp);
-        }
-    } else {
-        // 0x413 (1 word) : Number of kilobytes before EBDA
-        let nb_bef_ebda = unsafe { (*p2v(PAddr::<u16>::from_raw(0x413)).ptr() as usize) * 1024 };
-        if let Some(mp) = unsafe { search1(PAddr::from_raw(nb_bef_ebda - 1024), 1024) } {
-            return Some(mp);
-        }
+    unsafe {
+        let ebda_addr = (*p2v(PAddr::<u16>::from_raw(0x40E)).ptr() as usize) << 4;
+        let ebda: PAddr<u8> = PAddr::from_raw(ebda_addr);
+        let first_try = if !ebda.is_null() {
+            ebda
+        } else {
+            // 0x413 (1 word) : Number of kilobytes before EBDA
+            let bef_ebda = (*p2v(PAddr::<u16>::from_raw(0x413)).ptr() as usize) * 1024;
+            PAddr::from_raw(bef_ebda - 1024)
+        };
+        search1(first_try, 1024).or_else(|| search1(PAddr::from_raw(0xF0000), 0x10000))
     }
-    unsafe { search1(PAddr::from_raw(0xF0000), 0x10000) }
 }
 
 /// Search for an MP configuration table.
@@ -175,14 +175,10 @@ fn search() -> Option<*const Mp> {
 fn config() -> Option<(*const Mp, *const MpConf)> {
     let mp = search()?;
     let conf = unsafe { (*mp).get_conf()? };
-    if !conf.verify() {
-        return None;
-    }
     match conf.version {
-        1 | 4 => {}
-        _ => return None,
+        1 | 4 => Some((mp, conf)),
+        _ => None,
     }
-    Some((mp, conf))
 }
 
 pub fn init() {
@@ -193,33 +189,30 @@ pub fn init() {
     let mut p = unsafe { conf.add(1) as *const u8 };
     let e = unsafe { (conf as *const u8).add((*conf).length as usize) };
     while p < e {
-        match unsafe { *p } {
-            proc_ent_type::MPPROC => {
+        let ty = unsafe { *p };
+        let sz = match ty {
+            proc_ent_type::MPPROC => unsafe {
                 let pr = p as *const MpProc;
-                unsafe {
-                    use super::proc::init_new_cpu;
-                    if let Some(cpu) = init_new_cpu() {
-                        cpu.apic_id = (*pr).apic_id;
-                        log!("cpu found (apic id: {})", cpu.apic_id);
-                    }
-                    p = p.add(size_of::<MpProc>());
+                if let Some(cpu) = super::proc::init_new_cpu() {
+                    cpu.apic_id = (*pr).apic_id;
+                    log!("cpu found (apic id: {})", (*pr).apic_id);
+                } else {
+                    log!("cpu ignored (apic id: {})", (*pr).apic_id);
                 }
-            }
-            proc_ent_type::MPIOAPIC => {
+                size_of::<MpProc>()
+            },
+            proc_ent_type::MPIOAPIC => unsafe {
                 let ioapic = p as *const MpIoApic;
-                unsafe {
-                    super::ioapic::IOAPIC_ID = (*ioapic).apic_no;
-                    p = p.add(size_of::<MpIoApic>());
-                }
-            }
-            proc_ent_type::MPBUS | proc_ent_type::MPIOINTR | proc_ent_type::MPLINTR => {
-                unsafe { p = p.add(8) };
-            }
+                super::ioapic::IOAPIC_ID = (*ioapic).apic_no;
+                size_of::<MpIoApic>()
+            },
+            proc_ent_type::MPBUS | proc_ent_type::MPIOINTR | proc_ent_type::MPLINTR => 8,
             _ => {
                 is_mp = false;
                 break;
             }
-        }
+        };
+        p = unsafe { p.add(sz) };
     }
     if !is_mp {
         panic!("Didn't find a suitable machine");

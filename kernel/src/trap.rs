@@ -70,7 +70,6 @@ pub fn init() {
 
 /// Layout of the trap frame built on the stack by the
 /// hardware and by alltraps, and passed to trap().
-#[derive(Debug)]
 #[repr(C)]
 pub struct TrapFrame {
     // registers as pushed by pushal
@@ -109,7 +108,7 @@ pub struct TrapFrame {
 
 pub fn idt_init() {
     const IDT_SZ: usize = core::mem::size_of::<[gate::GateDesc; 256]>();
-    unsafe { x86::lidt(IDT.as_ptr() as *const u8, IDT_SZ as u16) };
+    x86::lidt(unsafe { IDT.as_ptr() as *const u8 }, IDT_SZ as u16);
 }
 
 #[no_mangle]

@@ -33,6 +33,9 @@ pub fn init() {
 }
 
 fn puts(s: &str) {
+    if !unsafe { IS_UART } {
+        return;
+    }
     for c in s.as_bytes() {
         putc(*c);
     }

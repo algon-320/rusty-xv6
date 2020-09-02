@@ -144,16 +144,7 @@ impl CpuShared {
 const MAX_NCPU: usize = 8;
 static mut _NCPU: usize = 0;
 /// Should not access this directly. Use cpus() instead.
-pub static mut _CPUS: [CpuShared; MAX_NCPU] = [
-    CpuShared::zero(),
-    CpuShared::zero(),
-    CpuShared::zero(),
-    CpuShared::zero(),
-    CpuShared::zero(),
-    CpuShared::zero(),
-    CpuShared::zero(),
-    CpuShared::zero(),
-];
+pub static mut _CPUS: [CpuShared; MAX_NCPU] = [CpuShared::zero(); MAX_NCPU];
 pub unsafe fn init_new_cpu() -> Option<&'static mut CpuShared> {
     if _NCPU == MAX_NCPU {
         None
@@ -195,7 +186,6 @@ pub fn my_cpu() -> RefMut<'static, Cpu> {
             if cpu.apic_id != apic_id {
                 None
             } else {
-                // log!("cpu {} is now borrowed", apic_id);
                 Some(cpu.private.borrow_mut())
             }
         })
@@ -209,7 +199,7 @@ pub fn my_cpu() -> RefMut<'static, Cpu> {
 /// x86 convention is that the caller has saved them.
 /// Contexts are stored at the bottom of the stack they
 /// describe; the stack pointer is the address of the context.
-/// The layout of the context matches the layout of the stack in swtch.S
+/// The layout of the context matches the layout of the stack in switch
 /// at the "Switch stacks" comment. Switch doesn't save eip explicitly,
 /// but it is on the stack and alloc_proc() manipulates it.
 #[repr(C)]
@@ -435,7 +425,6 @@ pub fn user_init() {
     p.cwd = inode::from_name("/");
     p.state = ProcessState::Runnable;
 
-    log!("init = {:?}", p);
     unsafe { INIT_PROC = p };
     PROC_TABLE.lock().put(p);
 }

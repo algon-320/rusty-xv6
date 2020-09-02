@@ -8,8 +8,7 @@ const IOAPIC: *mut IoApic = 0xFEC00000 as *mut IoApic;
 /// IO APIC MMIO structure: write reg, then read or write data.
 ///
 /// [reg, pad1, pad2, pad3, data] : [u32; 5]
-#[repr(transparent)]
-pub struct IoApic([u32; 5]);
+type IoApic = [u32; 5];
 
 const REG_OFFSET: usize = 0;
 const DAT_OFFSET: usize = 4;

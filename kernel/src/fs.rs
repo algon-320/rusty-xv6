@@ -364,29 +364,6 @@ pub mod inode {
         Some((first_elem, skip_leading_slash(path)))
     }
 
-    #[test_case]
-    fn test_split_first() {
-        let path = b"/foo";
-        let (a, b) = split_first(path).unwrap();
-        assert_eq!(a, b"foo");
-        assert_eq!(b, b"");
-
-        let path = b"a/bb/c";
-        let (a, b) = split_first(path).unwrap();
-        assert_eq!(a, b"a");
-        assert_eq!(b, b"bb/c");
-
-        let path = b"///a//bb";
-        let (a, b) = split_first(path).unwrap();
-        assert_eq!(a, b"a");
-        assert_eq!(b, b"bb");
-
-        let path = b"";
-        assert!(split_first(path).is_none());
-        let path = b"////";
-        assert!(split_first(path).is_none());
-    }
-
     fn name_x(path: &str, name_iparent: bool) -> Option<InodeRef> {
         let mut ip = match path {
             "/" => get(ROOT_DEV, ROOT_INO),
@@ -422,6 +399,34 @@ pub mod inode {
     }
     pub fn from_name(path: &str) -> Option<InodeRef> {
         name_x(path, false)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test_case]
+        fn test_split_first() {
+            let path = b"/foo";
+            let (a, b) = split_first(path).unwrap();
+            assert_eq!(a, b"foo");
+            assert_eq!(b, b"");
+
+            let path = b"a/bb/c";
+            let (a, b) = split_first(path).unwrap();
+            assert_eq!(a, b"a");
+            assert_eq!(b, b"bb/c");
+
+            let path = b"///a//bb";
+            let (a, b) = split_first(path).unwrap();
+            assert_eq!(a, b"a");
+            assert_eq!(b, b"bb");
+
+            let path = b"";
+            assert!(split_first(path).is_none());
+            let path = b"////";
+            assert!(split_first(path).is_none());
+        }
     }
 }
 

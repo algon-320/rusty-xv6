@@ -24,15 +24,16 @@ pub fn seginit() {
     // because it would have to have dpl::USER,
     // but the CPU forbids an interrupt from CPL=0 to DPL=3.
     let mut c = super::proc::my_cpu();
-    c.gdt[SEG_KCODE] = SegDesc::seg(seg_type::STA_X | seg_type::STA_R, 0, 0xFFFFFFFF, 0);
-    c.gdt[SEG_KDATA] = SegDesc::seg(seg_type::STA_W, 0, 0xFFFFFFFF, 0);
-    c.gdt[SEG_UCODE] = SegDesc::seg(seg_type::STA_X | seg_type::STA_R, 0, 0xFFFFFFFF, dpl::USER);
-    c.gdt[SEG_UDATA] = SegDesc::seg(seg_type::STA_W, 0, 0xFFFFFFFF, dpl::USER);
+    let type_code = seg_type::STA_X | seg_type::STA_R;
+    let type_data = seg_type::STA_W;
+    c.gdt[SEG_KCODE] = SegDesc::seg(type_code, 0, 0xFFFFFFFF, 0);
+    c.gdt[SEG_KDATA] = SegDesc::seg(type_data, 0, 0xFFFFFFFF, 0);
+    c.gdt[SEG_UCODE] = SegDesc::seg(type_code, 0, 0xFFFFFFFF, dpl::USER);
+    c.gdt[SEG_UDATA] = SegDesc::seg(type_data, 0, 0xFFFFFFFF, dpl::USER);
     x86::lgdt(
         c.gdt.as_ptr() as *const u8,
         core::mem::size_of::<[SegDesc; NSEGS]>() as u16,
     );
-    dbg!(c.gdt.as_ptr());
 }
 
 // Return the reference of the PTE in page table pg_dir
@@ -43,21 +44,23 @@ fn walk_page_dir(
     va: VAddr<Page>,
     alloc: bool,
 ) -> Option<&mut PageTableEntry> {
-    let pde = &mut pg_dir[pg_dir::pdx(va)];
+    use pg_dir::{pdx, ptx};
+    let pde = &mut pg_dir[pdx(va)];
     let pg_tab = if pde.flags_check(ent_flag::PRESENT) {
         p2v(pde.addr())
     } else {
         if !alloc {
             return None;
         }
-        let pg_tab = VAddr::from(kalloc::kalloc()? as *mut PageTable);
+        let pg_tab = kalloc::kalloc()? as *mut PageTable;
+        let pg_tab = VAddr::from(pg_tab);
 
         // Make sure all those PTE_P bits are zero.
         unsafe { rlibc::memset(pg_tab.cast().mut_ptr(), 0, PAGE_SIZE) };
 
-        // // The permissions here are overly generous, but they can
-        // // be further restricted by the permissions in
-        // // the page table entries, if necessary.
+        // The permissions here are overly generous, but they can
+        // be further restricted by the permissions in
+        // the page table entries, if necessary.
         *pde = PageDirEntry::new_table(
             v2p(pg_tab).raw() as u32,
             ent_flag::PRESENT | ent_flag::WRITABLE | ent_flag::USER,
@@ -65,7 +68,8 @@ fn walk_page_dir(
         // assert!(*pde & mmu::PteFlags::PRESENT.bits() != 0);
         pg_tab
     };
-    unsafe { Some(&mut (*pg_tab.mut_ptr())[pg_dir::ptx(va)]) }
+    let pg_tab = unsafe { &mut *pg_tab.mut_ptr() };
+    Some(&mut pg_tab[ptx(va)])
 }
 
 // Create PTEs for virtual addresses starting at va that refer to
@@ -98,7 +102,7 @@ fn map_pages(
 pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
     let data_vaddr = {
         extern "C" {
-            static data: core::ffi::c_void;
+            static data: u8;
         }
         VAddr::from_raw(unsafe { &data } as *const _ as usize)
     };
@@ -135,8 +139,6 @@ pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
     ];
 
     let pg_dir = kalloc::kalloc()? as *mut PageDirectory;
-    log!("setup_kvm: pg_dir = {:p}", pg_dir);
-
     unsafe { rlibc::memset(pg_dir as *mut u8, 0, PAGE_SIZE) };
     if p2v(PHYSTOP) > DEVSPACE {
         panic!("PHYSTOP too high");
@@ -174,6 +176,19 @@ pub fn switch_kvm() {
     x86::lcr3(v2p(kpg_dir).raw() as u32);
 }
 
+/// Free a page table and all the physical memory pages in the user part.
+fn free_vm(pg_dir: &mut PageDirectory) {
+    uvm::dealloc(pg_dir, KERNBASE.raw(), 0);
+    for ent in pg_dir
+        .iter()
+        .filter(|ent| ent.flags_check(ent_flag::PRESENT))
+    {
+        let v = p2v(ent.addr()).cast::<Page>();
+        kalloc::kfree(v.mut_ptr());
+    }
+    kalloc::kfree(pg_dir as *mut _ as *mut Page);
+}
+
 pub mod uvm {
     use super::*;
     use crate::lock::cli;
@@ -186,16 +201,16 @@ pub mod uvm {
     /// the size of init_code must be less than a page.
     pub fn init(pg_dir: &mut pg_dir::PageDirectory, init_code: &[u8]) {
         assert!(init_code.len() < PAGE_SIZE);
-        let mem = crate::kalloc::kalloc().unwrap();
-        unsafe { rlibc::memset(mem as *mut u8, 0, PAGE_SIZE) };
+        let mem = crate::kalloc::kalloc().unwrap() as *mut u8;
+        unsafe { rlibc::memset(mem, 0, PAGE_SIZE) };
         map_pages(
             pg_dir,
             VAddr::from_raw(0),
             PAGE_SIZE,
-            v2p(VAddr::from(mem)),
+            v2p(VAddr::from(mem as *mut Page)),
             ent_flag::WRITABLE | ent_flag::USER,
         );
-        unsafe { core::ptr::copy(init_code.as_ptr(), mem as *mut u8, init_code.len()) };
+        unsafe { core::ptr::copy_nonoverlapping(init_code.as_ptr(), mem, init_code.len()) };
     }
 
     /// Switch TSS and h/w page table to correspond to process p.
@@ -228,21 +243,4 @@ pub mod uvm {
     pub fn dealloc(_pg_dir: &mut PageDirectory, _old_sz: usize, _new_sz: usize) {
         todo!()
     }
-}
-
-/// Free a page table and all the physical memory pages in the user part.
-fn free_vm(pg_dir: *mut PageDirectory) {
-    if pg_dir.is_null() {
-        panic!("free_vm: no pg_dir");
-    }
-    let pg_dir = unsafe { &mut *pg_dir };
-    uvm::dealloc(pg_dir, KERNBASE.raw(), 0);
-    for ent in pg_dir.iter() {
-        if ent.flags_check(ent_flag::PRESENT) {
-            let v = p2v(ent.addr());
-            let v: VAddr<Page> = v.cast();
-            kalloc::kfree(v.mut_ptr());
-        }
-    }
-    kalloc::kfree(pg_dir as *mut PageDirectory as *mut Page);
 }

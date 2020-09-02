@@ -43,12 +43,18 @@ enum LapicReg {
 }
 impl LapicReg {
     pub fn write(self, value: u32) {
-        unsafe { core::ptr::write_volatile(LAPIC.unwrap().add(self as usize), value) };
+        unsafe {
+            let reg = LAPIC.unwrap().add(self as usize);
+            core::ptr::write_volatile(reg, value);
+        }
         // wait for write to finish, by reading
         LapicReg::ID.read();
     }
     pub fn read(self) -> u32 {
-        unsafe { core::ptr::read_volatile(LAPIC.unwrap().add(self as usize)) }
+        unsafe {
+            let reg = LAPIC.unwrap().add(self as usize);
+            core::ptr::read_volatile(reg)
+        }
     }
 }
 
@@ -128,14 +134,15 @@ pub fn init() {
 
 pub fn lapic_id() -> Option<u8> {
     unsafe { LAPIC? };
-    Some(((LapicReg::ID.read() >> 24) & 0xFF) as u8)
+    Some((LapicReg::ID.read() >> 24) as u8)
 }
 
 /// Acknowledge interrupt.
 pub fn eoi() {
-    if unsafe { LAPIC.is_some() } {
-        LapicReg::EOI.write(0);
+    if unsafe { LAPIC.is_none() } {
+        return;
     }
+    LapicReg::EOI.write(0);
 }
 
 /// Spin for a given number of microseconds.
@@ -148,8 +155,6 @@ const CMOS_RETURN: u16 = 0x71;
 // Start additional processor running entry code at addr.
 // See Appendix B of MultiProcessor Specification.
 pub fn start_ap(apic_id: u8, addr: PAddr<*mut core::ffi::c_void>) {
-    dbg!(apic_id, addr.ptr());
-
     // "The BSP must initialize CMOS shutdown code to 0AH
     // and the warm reset vector (DWORD based at 40:67) to point at
     // the AP startup code prior to the [universal startup algorithm]."
@@ -162,7 +167,7 @@ pub fn start_ap(apic_id: u8, addr: PAddr<*mut core::ffi::c_void>) {
     unsafe {
         let off = 0;
         wrv.add(0).write_unaligned(off);
-        let seg = ((addr.raw() >> 4) & 0xFFFF) as u16;
+        let seg = (addr.raw() >> 4) as u16;
         wrv.add(1).write_unaligned(seg);
     }
 

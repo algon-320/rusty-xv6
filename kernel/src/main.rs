@@ -149,56 +149,6 @@ fn start_others() {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test_case]
-    fn address_round_up() {
-        let addr: PAddr<u8> = PAddr::from_raw(20).round_up(4096);
-        let expected = PAddr::from_raw(4096);
-        assert_eq!(addr, expected);
-
-        let addr: PAddr<u8> = PAddr::from_raw(4096).round_up(4096);
-        let expected = PAddr::from_raw(4096);
-        assert_eq!(addr, expected);
-
-        let addr: PAddr<u8> = PAddr::from_raw(0usize.wrapping_sub(1)).round_up(4096);
-        let expected = PAddr::from_raw(0);
-        assert_eq!(addr, expected);
-    }
-    #[test_case]
-    fn address_round_down() {
-        let addr: PAddr<u8> = PAddr::from_raw(20).round_down(4096);
-        let expected = PAddr::from_raw(0);
-        assert_eq!(addr, expected);
-
-        let addr: PAddr<u8> = PAddr::from_raw(4100).round_down(4096);
-        let expected = PAddr::from_raw(4096);
-        assert_eq!(addr, expected);
-
-        let addr: PAddr<u8> = PAddr::from_raw(0).round_down(4096);
-        let expected = PAddr::from_raw(0);
-        assert_eq!(addr, expected);
-    }
-
-    #[test_case]
-    fn x86_xchg() {
-        let mut x = 123u32;
-        let y = x86::xchgl(&mut x, 456u32);
-        assert_eq!(y, 123);
-        assert_eq!(x, 456);
-    }
-}
-
-#[cfg(test)]
-fn test_runner(tests: &[&dyn Fn()]) {
-    println!("Running {} tests", tests.len());
-    for test in tests {
-        test();
-    }
-    println!(print_color::LIGHT_GREEN; "all tests passed!");
-}
-
 #[panic_handler]
 #[no_mangle]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -348,3 +298,53 @@ ap_gdtdesc:
 # Restore previous destination
 .popsection
 "#}
+
+#[cfg(test)]
+fn test_runner(tests: &[&dyn Fn()]) {
+    println!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
+    println!(print_color::LIGHT_GREEN; "all tests passed!");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test_case]
+    fn address_round_up() {
+        let addr: PAddr<u8> = PAddr::from_raw(20).round_up(4096);
+        let expected = PAddr::from_raw(4096);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(4096).round_up(4096);
+        let expected = PAddr::from_raw(4096);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(0usize.wrapping_sub(1)).round_up(4096);
+        let expected = PAddr::from_raw(0);
+        assert_eq!(addr, expected);
+    }
+    #[test_case]
+    fn address_round_down() {
+        let addr: PAddr<u8> = PAddr::from_raw(20).round_down(4096);
+        let expected = PAddr::from_raw(0);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(4100).round_down(4096);
+        let expected = PAddr::from_raw(4096);
+        assert_eq!(addr, expected);
+
+        let addr: PAddr<u8> = PAddr::from_raw(0).round_down(4096);
+        let expected = PAddr::from_raw(0);
+        assert_eq!(addr, expected);
+    }
+
+    #[test_case]
+    fn x86_xchg() {
+        let mut x = 123u32;
+        let y = x86::xchgl(&mut x, 456u32);
+        assert_eq!(y, 123);
+        assert_eq!(x, 456);
+    }
+}
