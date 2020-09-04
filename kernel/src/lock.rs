@@ -1,4 +1,5 @@
 pub mod spin {
+    use crate::lapic::lapic_id;
     use crate::proc::my_cpu_id;
     use core::sync::atomic::{fence, spin_loop_hint, AtomicBool, AtomicI8, Ordering};
 
@@ -27,6 +28,9 @@ pub mod spin {
         /// Holding a lock for a long time may cause
         /// other CPUs to waste time spinning to acquire it.
         pub fn acquire(&self) {
+            if lapic_id().is_none() {
+                return;
+            }
             super::push_cli();
             assert!(!self.holding(), "acquire: {}", self.name);
 
@@ -48,6 +52,9 @@ pub mod spin {
 
         // Release the lock.
         pub fn release(&self) {
+            if lapic_id().is_none() {
+                return;
+            }
             assert!(self.holding(), "release: {}", self.name);
             self.cpu.store(-1, Ordering::Relaxed);
 

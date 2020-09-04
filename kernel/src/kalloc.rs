@@ -1,44 +1,19 @@
-use super::lock::spin::SpinLock;
+use super::lock::spin::SpinMutex;
 use super::memory;
 use super::memory::{v2p, Page, PAGE_SIZE};
-use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, Ordering};
 use utils::prelude::*;
 
 #[repr(transparent)]
 struct Run {
     pub next: *mut Run,
 }
-struct Kmem {
-    use_lock: AtomicBool,
-    lock: SpinLock,
-    free_list: UnsafeCell<*mut Run>,
-}
-impl Kmem {
-    pub fn with<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&mut *mut Run) -> R,
-    {
-        if self.use_lock.load(Ordering::SeqCst) {
-            self.lock.acquire();
-            let r = f(unsafe { &mut *self.free_list.get() });
-            self.lock.release();
-            r
-        } else {
-            unsafe { f(&mut *self.free_list.get()) }
-        }
-    }
-    pub fn lock(&self) {
-        self.use_lock.store(true, Ordering::SeqCst);
-    }
-}
-unsafe impl Sync for Kmem {}
-
-static KMEM: Kmem = Kmem {
-    use_lock: AtomicBool::new(false),
-    lock: SpinLock::new("kmem"),
-    free_list: UnsafeCell::new(core::ptr::null_mut()),
-};
+unsafe impl Send for Run {}
+static KMEM: SpinMutex<Run> = SpinMutex::new(
+    "kmem",
+    Run {
+        next: core::ptr::null_mut(),
+    },
+);
 
 /// Initialization happens in two phases.
 /// 1. main() calls kalloc::init1() while still using entry_page_dir to place just
@@ -50,7 +25,6 @@ pub fn init1(start: VAddr<u8>, end: VAddr<u8>) {
 }
 pub fn init2(start: VAddr<u8>, end: VAddr<u8>) {
     free_range(start, end);
-    KMEM.lock();
 }
 
 fn free_range(start: VAddr<u8>, end: VAddr<u8>) {
@@ -81,25 +55,23 @@ pub fn kfree(page: *mut Page) {
     // Fill with junk to catch dangling refs
     unsafe { rlibc::memset(page as *mut u8, 1, PAGE_SIZE) }; // TODO: make this fast
 
-    KMEM.with(|free_list| {
-        let r = page as *mut Run;
-        unsafe { (*r).next = *free_list };
-        *free_list = r;
-    });
+    let mut free_list = KMEM.lock();
+    let r = page as *mut Run;
+    unsafe { (*r).next = free_list.next };
+    free_list.next = r;
 }
 
 /// Allocate one 4096-byte page of physical memory.
 /// Returns a pointer that the kernel can use.
 /// Returns None if the memory cannot be allocated.
 pub fn kalloc() -> Option<*mut Page> {
-    KMEM.with(|free_list| {
-        let r = *free_list;
-        if !r.is_null() {
-            *free_list = unsafe { (*r).next };
-            Some(r as *mut Page)
-        } else {
-            log!("kalloc failed: returning None");
-            None
-        }
-    })
+    let mut free_list = KMEM.lock();
+    let r = free_list.next;
+    if !r.is_null() {
+        free_list.next = unsafe { (*r).next };
+        Some(r as *mut Page)
+    } else {
+        log!("kalloc failed: returning None");
+        None
+    }
 }
