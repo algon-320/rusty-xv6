@@ -17,8 +17,6 @@ $ make qemu
 ```
 
 ## Debug
-Set `GDB_EXTERN_TERM` in Makefile to open GDB on your terminal.
-(Default: `gnome-terminal`)
 ```
 $ make gdb
 ```
@@ -29,7 +27,5 @@ $ make gdb-attach
 
 ## Test
 ```
-$ make test PROFILE=debug
+$ make test
 ```
-`PROFILE=debug` is currently required.
-(TODO: It should be testable in any build modes.)
