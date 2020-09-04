@@ -23,14 +23,14 @@ GDB_EXTERN_TERM := gnome-terminal --
 #===============================================================================
 
 .PHONY: qemu
-qemu: build-image $(FS_IMAGE)
+qemu: build-image build-fs
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
     -drive file=$(FS_IMAGE),index=1,media=disk,format=raw\
     -smp 2 -m 512 -serial mon:stdio
 
 .PHONY: gdb
-gdb: build-image $(FS_IMAGE)
+gdb: build-image build-fs
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
     -drive file=$(FS_IMAGE),index=1,media=disk,format=raw\
@@ -50,9 +50,10 @@ $(INITCODE): $(INITCODE_DEPS)
 	objcopy -O binary -j .text -j .rodata $(OUT_DIR)/init $(INITCODE)
 
 $(MKFS): $(MKFS_DEPS)
-	cd mkfs ; cargo build $(CARGO_FLAG)
+	cd mkfs; cargo build --release
 
-$(FS_IMAGE): $(MKFS)
+.PHONY: build-fs
+build-fs: $(MKFS)
 	$(MKFS) $(FS_IMAGE)
 
 .PHONY: build-image

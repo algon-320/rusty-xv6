@@ -22,3 +22,7 @@ jobs:
     - name: build-image
       run: >-
         make build-image
+
+    - name: build-fs
+      run: >-
+        make build-fs
