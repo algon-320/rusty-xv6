@@ -3,9 +3,6 @@ pub mod spin {
     use crate::proc::my_cpu_id;
     use core::sync::atomic::{fence, spin_loop_hint, AtomicBool, AtomicI8, Ordering};
 
-    #[cfg(debug_assertions)]
-    use utils::prelude::*;
-
     pub struct SpinLock {
         locked: AtomicBool,
 

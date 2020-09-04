@@ -154,7 +154,7 @@ pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
         )
         .is_none()
         {
-            println!(print_color::LIGHT_RED; "map_pages fail");
+            println!(super::console::print_color::LIGHT_RED; "map_pages fail");
             free_vm(pg_dir);
             return None;
         }

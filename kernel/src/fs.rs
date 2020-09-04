@@ -120,7 +120,6 @@ pub mod inode {
     use crate::proc::my_proc;
     use core::cell::UnsafeCell;
     use core::sync::atomic::{AtomicUsize, Ordering};
-    use utils::prelude::*;
 
     const ROOT_DEV: usize = 1;
     const ROOT_INO: usize = 1;

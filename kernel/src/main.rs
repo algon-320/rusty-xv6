@@ -18,6 +18,7 @@
 
 extern crate rlibc;
 
+#[macro_use]
 mod console;
 mod fs;
 mod ide;
@@ -72,6 +73,8 @@ pub extern "C" fn main() -> ! {
     }
     #[cfg(not(test))]
     {
+        console::vga::clear_screen();
+
         let pre_alloc_lim = PAddr::from_raw(4 * 1024 * 1024);
         kalloc::init1(
             VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize),
@@ -153,7 +156,7 @@ fn start_others() {
 #[no_mangle]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     x86::cli(); // stop interruption
-    println!(print_color::LIGHT_RED; "{}", info);
+    println!(console::print_color::LIGHT_RED; "{}", info);
     loop {}
 }
 
@@ -305,7 +308,7 @@ fn test_runner(tests: &[&dyn Fn()]) {
     for test in tests {
         test();
     }
-    println!(print_color::LIGHT_GREEN; "all tests passed!");
+    println!(console::print_color::LIGHT_GREEN; "all tests passed!");
 }
 
 #[cfg(test)]

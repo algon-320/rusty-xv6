@@ -1,6 +1,5 @@
 use super::trap;
 use core::ptr::{read_volatile, write_volatile};
-use utils::prelude::*;
 
 pub(crate) static mut IOAPIC_ID: u8 = 0b01010101;
 const IOAPIC: *mut IoApic = 0xFEC00000 as *mut IoApic;

@@ -4,7 +4,6 @@ use super::memory::{pg_dir, seg};
 use super::trap;
 use core::cell::{RefCell, RefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use utils::prelude::*;
 use utils::x86;
 
 /// Task state segment format
@@ -467,7 +466,7 @@ switch:
 ///   - eventually that process transfers control
 ///       via switch back to the scheduler.
 pub fn scheduler() -> ! {
-    println!(print_color::CYAN; "[cpu:{}] scheduler start", my_cpu_id());
+    println!(super::console::print_color::CYAN; "[cpu:{}] scheduler start", my_cpu_id());
 
     use super::lock::cli;
     use super::vm;

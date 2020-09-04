@@ -1,6 +1,5 @@
 use super::fs::Buf;
 use super::lock::spin::SpinMutex;
-use utils::prelude::*;
 use utils::x86;
 
 static IDE_QUEUE: SpinMutex<Option<&'static Buf>> = SpinMutex::new("ide", None);
