@@ -9,6 +9,4 @@ if [[ ! -f "${kernel_bin}" ]]; then
     echo "${kernel_bin} doesn't exist"
     exit 1
 fi
-cd ${SCRIPT_DIR}
-make -s build-image KERNEL_BIN="${kernel_bin}"
-make -s qemu KERNEL_BIN="${kernel_bin}"
+make -C ${SCRIPT_DIR} -s qemu KERNEL_BIN="${kernel_bin}"
