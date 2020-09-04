@@ -6,9 +6,6 @@ re-implementing it in Rust (+ inline-assembly and some unstable features).
 ## Requirements
 - Nightly Rust + cargo
 - qemu-system-i386
-- xv6 filesystem image (currently)
-    1. build [xv6](https://github.com/mit-pdos/xv6-public).
-    2. copy `fs.img` here.
 - other build tools:
     - `make`
     - `objcopy`

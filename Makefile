@@ -12,24 +12,28 @@ KERNEL_DEPS := kernel/Cargo.toml kernel/kernel.ld kernel/src/* utils/src/*
 INITCODE := $(OUT_DIR)/init.bin
 INITCODE_DEPS := user/init/Cargo.toml user/init/init.ld user/init/src/*
 
+MKFS := ./target/release/mkfs
+MKFS_DEPS := mkfs/Cargo.toml mkfs/src/*
+
 IMAGE := $(OUT_DIR)/xv6.img
+FS_IMAGE := $(OUT_DIR)/fs.img
 
 GDB_PORT := $(shell expr `id -u` % 5000 + 25000)
 GDB_EXTERN_TERM := gnome-terminal --
 #===============================================================================
 
 .PHONY: qemu
-qemu: build-image ./fs.img
+qemu: build-image $(FS_IMAGE)
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
-    -drive file=fs.img,index=1,media=disk,format=raw\
+    -drive file=$(FS_IMAGE),index=1,media=disk,format=raw\
     -smp 2 -m 512 -serial mon:stdio
 
 .PHONY: gdb
-gdb: build-image ./fs.img
+gdb: build-image $(FS_IMAGE)
 	qemu-system-i386\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
-    -drive file=fs.img,index=1,media=disk,format=raw\
+    -drive file=$(FS_IMAGE),index=1,media=disk,format=raw\
     -smp 1 -m 512 -S -gdb tcp::$(GDB_PORT) -serial mon:stdio
 .PHONY: gdb-attach
 gdb-attach:
@@ -44,6 +48,12 @@ $(KERNEL_BIN): $(KERNEL_DEPS) $(INITCODE)
 $(INITCODE): $(INITCODE_DEPS)
 	cd user/init; cargo build $(CARGO_FLAG)
 	objcopy -O binary -j .text -j .rodata $(OUT_DIR)/init $(INITCODE)
+
+$(MKFS): $(MKFS_DEPS)
+	cd mkfs ; cargo build $(CARGO_FLAG)
+
+$(FS_IMAGE): $(MKFS)
+	$(MKFS) $(FS_IMAGE)
 
 .PHONY: build-image
 build-image: $(BOOTLOADER_BIN) $(KERNEL_BIN)
