@@ -1,8 +1,17 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{Result, SeekFrom};
-use std::mem::{size_of, transmute};
+use std::mem::size_of;
 use std::path::Path;
+
+fn cast<T, U>(r: &T) -> &U {
+    assert_eq!(size_of::<T>(), size_of::<U>());
+    unsafe { &*(r as *const T as *const U) }
+}
+fn cast_mut<T, U>(r: &mut T) -> &mut U {
+    assert_eq!(size_of::<T>(), size_of::<U>());
+    unsafe { &mut *(r as *mut T as *mut U) }
+}
 
 mod fs;
 use fs::*;
@@ -70,7 +79,7 @@ impl FsBuilder {
         let mut sect = [0u8; BLK_SIZE];
         self.read_sect(bn, &mut sect)?;
         {
-            let inodes: &mut InodesSector = unsafe { transmute(&mut sect) };
+            let inodes: &mut InodesSector = cast_mut(&mut sect);
             inodes[idx] = ind.clone();
         }
         self.write_sect(bn, &sect)?;
@@ -81,7 +90,7 @@ impl FsBuilder {
         let mut sect = [0u8; BLK_SIZE];
         self.read_sect(bn, &mut sect)?;
         {
-            let inodes: &mut InodesSector = unsafe { transmute(&mut sect) };
+            let inodes: &mut InodesSector = cast_mut(&mut sect);
             *out = inodes[idx].clone();
         }
         Ok(inum)
@@ -137,14 +146,13 @@ impl FsBuilder {
                 }
                 let mut indirect: [u32; N_INDIRECT] = [0u32; N_INDIRECT];
                 {
-                    assert_eq!(size_of::<Sector>(), size_of::<[u32; N_INDIRECT]>());
-                    let indirect: &mut Sector = unsafe { transmute(&mut indirect) };
+                    let indirect: &mut Sector = cast_mut(&mut indirect);
                     self.read_sect(din.addrs[N_DIRECT].to_le() as usize, indirect)?;
                 }
                 if indirect[fbn - N_DIRECT] == 0 {
                     indirect[fbn - N_DIRECT] = self.take_next_block() as u32;
 
-                    let indirect: &Sector = unsafe { transmute(&indirect) };
+                    let indirect: &Sector = cast(&indirect);
                     self.write_sect(din.addrs[N_DIRECT].to_le() as usize, indirect)?;
                 }
                 indirect[fbn - N_DIRECT].to_le() as usize
