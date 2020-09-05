@@ -66,6 +66,7 @@ extern "C" {
 
 #[no_mangle]
 pub extern "C" fn main() -> ! {
+    console::vga::clear_screen();
     #[cfg(test)]
     {
         test_main();
@@ -73,8 +74,6 @@ pub extern "C" fn main() -> ! {
     }
     #[cfg(not(test))]
     {
-        console::vga::clear_screen();
-
         let pre_alloc_lim = PAddr::from_raw(4 * 1024 * 1024);
         kalloc::init1(
             VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize),
