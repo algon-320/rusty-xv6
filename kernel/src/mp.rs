@@ -183,9 +183,8 @@ fn config() -> Option<(*const Mp, *const MpConf)> {
 
 pub fn init() {
     let (mp, conf) = config().expect("Expect to run on an SMP");
-    let mut is_mp = true;
-    unsafe { super::lapic::LAPIC = Some((*conf).lapic_addr) };
 
+    let mut is_mp = true;
     let mut p = unsafe { conf.add(1) as *const u8 };
     let e = unsafe { (conf as *const u8).add((*conf).length as usize) };
     while p < e {
@@ -217,6 +216,9 @@ pub fn init() {
     if !is_mp {
         panic!("Didn't find a suitable machine");
     }
+
+    unsafe { super::lapic::LAPIC = Some((*conf).lapic_addr) };
+
     if unsafe { (*mp).imcr } != 0 {
         // Bochs doesn't support IMCR, so this doesn't run on Bochs.
         // But it would on real hardware.
