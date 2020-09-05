@@ -42,9 +42,6 @@ pub mod spin {
 
             self.cpu.store(my_cpu_id() as i8, Ordering::Relaxed);
             // TODO: get_caller_pcs
-
-            #[cfg(debug_assertions)]
-            log!("lock({}) taken by cpu:{}", self.name, my_cpu_id());
         }
 
         // Release the lock.
@@ -62,9 +59,6 @@ pub mod spin {
 
             // Release the lock
             self.locked.store(false, Ordering::Relaxed);
-
-            #[cfg(debug_assertions)]
-            log!("lock({}) released", self.name);
             super::pop_cli();
         }
 
