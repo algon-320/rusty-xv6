@@ -1,6 +1,6 @@
 [build]
 target = "../i386.json"
-target-dir = "../target"
+target-dir = "../out/target/kernel"
 rustflags = ["-C", "link-args=-Tkernel.ld"]
 
 [unstable]

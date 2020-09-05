@@ -23,8 +23,6 @@ INITCODE_DEPS := user/init/Cargo.toml user/init/init.ld user/init/src/*
 MKFS := out/mkfs
 MKFS_DEPS := mkfs/Cargo.toml mkfs/src/*
 
-BUILD_DIR := ./target/i386/$(PROFILE)
-
 .PHONY: qemu
 qemu: build-image build-fs
 	qemu-system-i386 $(QEMU_ARGS)
@@ -38,40 +36,45 @@ gdb-attach:
 	gdb $(KERNEL_BIN) -ex "target remote localhost:$(GDB_PORT)"
 
 .PHONY: build-image
-build-image: ./out $(BOOTLOADER_BIN) $(KERNEL_BIN)
+build-image: $(BOOTLOADER_BIN) $(KERNEL_BIN)
 	objcopy -O binary -j .text -j .rodata -j .bootsig $(BOOTLOADER_BIN) out/mbr
 	dd if=/dev/zero of=$(IMAGE) count=10000 status=none
 	dd if=out/mbr of=$(IMAGE) conv=notrunc status=none
 	dd if=$(KERNEL_BIN) of=$(IMAGE) seek=1 conv=notrunc status=none
 
 .PHONY: build-fs
-build-fs: ./out $(MKFS)
+build-fs: $(MKFS)
 	$(MKFS) $(FS_IMAGE)
 
 .PHONY: test
-test: ./out $(INITCODE)
+test: $(INITCODE)
 	cd kernel; cargo test
+
+RUST_CHECK := cargo fmt && cargo clippy
+.PHONY: check
+check:
+	cd bootloader; $(RUST_CHECK)
+	cd kernel; $(RUST_CHECK)
+	cd utils; $(RUST_CHECK)
+	cd user/init; $(RUST_CHECK)
+	cd mkfs; $(RUST_CHECK)
 
 .PHONY: clean
 clean:
-	-rm -r target
 	-rm -r out
-
-out:
-	mkdir out
 
 $(BOOTLOADER_BIN): $(BOOTLOADER_DEPS)
 	cd bootloader; cargo build --release
-	cp ./target/i386/release/bootloader $(BOOTLOADER_BIN)
+	cp ./out/target/bootloader/i386/release/bootloader $(BOOTLOADER_BIN)
 
 $(KERNEL_BIN): $(KERNEL_DEPS) $(INITCODE)
 	cd kernel; cargo build $(CARGO_FLAGS)
-	cp $(BUILD_DIR)/kernel $(KERNEL_BIN)
+	cp ./out/target/kernel/i386/$(PROFILE)/kernel $(KERNEL_BIN)
 
 $(INITCODE): $(INITCODE_DEPS)
 	cd user/init; cargo build $(CARGO_FLAGS)
-	objcopy -O binary -j .text -j .rodata $(BUILD_DIR)/init $(INITCODE)
+	objcopy -O binary -j .text -j .rodata ./out/target/init/i386/$(PROFILE)/init $(INITCODE)
 
 $(MKFS): $(MKFS_DEPS)
 	cd mkfs; cargo build --release
-	cp ./target/release/mkfs $(MKFS)
+	cp ./out/target/mkfs/release/mkfs $(MKFS)

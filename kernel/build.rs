@@ -21,12 +21,7 @@ fn copy_init() {
     let out_dir = std::env::var_os("OUT_DIR").unwrap();
     let out_dir = std::path::Path::new(&out_dir);
 
-    let init_bin = out_dir
-        .ancestors()
-        .nth(6)
-        .unwrap()
-        .join("out")
-        .join("init.bin");
+    let init_bin = out_dir.ancestors().nth(7).unwrap().join("init.bin");
     std::fs::copy(&init_bin, out_dir.join("init.bin")).unwrap();
 
     println!("cargo:rerun-if-changed={}", init_bin.to_str().unwrap());
