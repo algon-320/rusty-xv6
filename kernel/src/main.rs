@@ -63,42 +63,42 @@ extern "C" {
     static kernel_end: u8;
 }
 
+#[cfg(test)]
 #[no_mangle]
 pub extern "C" fn main() -> ! {
     console::vga::clear_screen();
-    #[cfg(test)]
-    {
-        test_main();
-        x86::outb(0xF4, 0x0); // exit qemu
-        loop {}
-    }
-    #[cfg(not(test))]
-    {
-        let pre_alloc_lim = PAddr::from_raw(4 * 1024 * 1024);
-        kalloc::init1(
-            VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize),
-            p2v(pre_alloc_lim),
-        ); // phys page allocator
-        vm::kvmalloc(); // kernel page table
-        mp::init(); // detect other processors
-        lapic::init(); // interrupt controller
-        vm::seginit(); // segment descriptors
-        pic_irq::init(); // disable pic
-        ioapic::init(); // another interrupt controller
-        console::init(); // console hardware
-        uart::init(); // serial port
-        proc::init(); // process table
-        trap::init(); // trap vectors
-        fs::bcache::init(); // buffer cache
-        ide::init(); // disk
+    test_main();
+    x86::outb(0xF4, 0x0); // exit qemu
+    loop {}
+}
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn main() -> ! {
+    console::vga::clear_screen();
+    let pre_alloc_lim = PAddr::from_raw(4 * 1024 * 1024);
+    kalloc::init1(
+        VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize),
+        p2v(pre_alloc_lim),
+    ); // phys page allocator
+    vm::kvmalloc(); // kernel page table
+    mp::init(); // detect other processors
+    lapic::init(); // interrupt controller
+    vm::seginit(); // segment descriptors
+    pic_irq::init(); // disable pic
+    ioapic::init(); // another interrupt controller
+    console::init(); // console hardware
+    uart::init(); // serial port
+    proc::init(); // process table
+    trap::init(); // trap vectors
+    fs::bcache::init(); // buffer cache
+    ide::init(); // disk
 
-        start_others(); // start other processors
+    start_others(); // start other processors
 
-        // must come after start_others()
-        kalloc::init2(p2v(pre_alloc_lim), p2v(memory::PHYSTOP).cast());
-        proc::user_init(); // first user process
-        mp_main(); // finish this processor's setup
-    }
+    // must come after start_others()
+    kalloc::init2(p2v(pre_alloc_lim), p2v(memory::PHYSTOP).cast());
+    proc::user_init(); // first user process
+    mp_main(); // finish this processor's setup
 }
 
 // Other CPUs jump here
