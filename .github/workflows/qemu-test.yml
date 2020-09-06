@@ -1,0 +1,26 @@
+name: Test on QEMU
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  make_test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: rust-toolchain
+      uses: actions-rs/toolchain@v1.0.6
+      with:
+        toolchain: nightly
+        override: true
+        components: rust-src
+
+    - run: sudo apt-get update
+    - name: install QEMU
+      run: sudo apt-get install qemu-system-x86
+    - run: echo "::add-path::$(pwd)"
+    - run: make test
