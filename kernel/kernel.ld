@@ -45,7 +45,7 @@ SECTIONS {
 
     /* The data segment */
     .data : {
-        *(.data)
+        *(.data .data.*)
     }
 
     PROVIDE(edata = .);
