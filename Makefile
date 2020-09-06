@@ -26,7 +26,14 @@ MKFS_DEPS := mkfs/Cargo.toml mkfs/src/*
 
 .PHONY: qemu
 qemu: build-image build-fs
-	qemu-system-i386 $(QEMU_ARGS)
+	qemu-system-i386 $(QEMU_ARGS);\
+    if [ $$? -eq 1 ]; then true; else false; fi
+
+.PHONY: qemu-limited
+qemu-limited: build-image build-fs
+	ulimit -t 15;\
+    qemu-system-i386 $(QEMU_ARGS) -nographic;\
+    if [ $$? -eq 1 ]; then true; else false; fi
 
 .PHONY: gdb
 gdb: build-image build-fs
