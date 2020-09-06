@@ -70,6 +70,7 @@ pub extern "C" fn main() -> ! {
     #[cfg(test)]
     {
         test_main();
+        x86::outb(0xF4, 0x0); // exit qemu
         loop {}
     }
     #[cfg(not(test))]

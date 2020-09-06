@@ -7,6 +7,7 @@ FS_IMAGE := out/fs.img
 QEMU_ARGS :=\
     -drive file=$(IMAGE),index=0,media=disk,format=raw\
     -drive file=$(FS_IMAGE),index=1,media=disk,format=raw\
+    -device isa-debug-exit,iobase=0xF4,iosize=0x01\
     -smp 2 -m 512 -serial mon:stdio
 GDB_PORT := $(shell expr `id -u` % 5000 + 25000)
 
