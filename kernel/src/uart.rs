@@ -27,9 +27,6 @@ pub fn init() {
     x86::inb(COM1 + 2);
     x86::inb(COM1 + 0);
     super::ioapic::enable(super::trap::IRQ_COM1, 0);
-
-    // Announce that we're here.
-    puts("xv6...\n");
 }
 
 pub fn puts(s: &str) {

@@ -55,6 +55,11 @@ pub static entry_page_dir: PageDirectory = PageDirectory(assigned_array![
     [memory::KERNBASE.raw() >> 22] =
         PageDirEntry::new_large_page(
                 unsafe { PAddr::from_raw_unchecked(0x00000000) },
+                ent_flag::WRITABLE | ent_flag::PRESENT),
+
+    [0xFEC00000 >> 22] =
+        PageDirEntry::new_large_page(
+                unsafe { PAddr::from_raw_unchecked(0xFEC00000) },
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ]);
 
@@ -67,6 +72,8 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn main() -> ! {
     console::vga::clear_screen();
+    ioapic::init();
+    uart::init();
     test_main();
     x86::outb(0xF4, 0x0); // exit qemu
     loop {}
@@ -88,6 +95,7 @@ pub extern "C" fn main() -> ! {
     ioapic::init(); // another interrupt controller
     console::init(); // console hardware
     uart::init(); // serial port
+    uart::puts("xv6...\n"); // Announce that we're here.
     proc::init(); // process table
     trap::init(); // trap vectors
     fs::bcache::init(); // buffer cache
@@ -156,6 +164,11 @@ fn start_others() {
 fn panic(info: &core::panic::PanicInfo) -> ! {
     x86::cli(); // stop interruption
     println!(console::print_color::LIGHT_RED; "{}", info);
+
+    // exit immediately if we are under test mode
+    #[cfg(test)]
+    x86::outb(0xF4, 0x1); // exit qemu with error
+
     loop {}
 }
 
