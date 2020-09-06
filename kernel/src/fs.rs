@@ -225,7 +225,9 @@ pub mod inode {
                 ptr: unsafe { core::ptr::NonNull::new_unchecked(ip as *const _ as *mut _) },
             }
         }
-        pub fn dup(&self) -> Self {
+    }
+    impl core::clone::Clone for InodeRef {
+        fn clone(&self) -> Self {
             let _ = ICACHE.lock();
             unsafe { self.new_ref() }
         }
@@ -368,7 +370,7 @@ pub mod inode {
             "/" => get(ROOT_DEV, ROOT_INO),
             _ =>
             // start traverse from the current working directory
-            unsafe { (*my_proc()).cwd.as_ref().unwrap().dup() }
+            unsafe { (*my_proc()).cwd.as_ref().unwrap().clone() }
         };
 
         let mut path = path.as_bytes();
