@@ -32,7 +32,7 @@ pub fn init() {
     puts("xv6...\n");
 }
 
-fn puts(s: &str) {
+pub fn puts(s: &str) {
     if !unsafe { IS_UART } {
         return;
     }

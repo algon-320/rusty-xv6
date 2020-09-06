@@ -19,6 +19,7 @@ pub fn init() {
 
 pub mod vga {
     use crate::lock::spin::SpinMutex;
+    use crate::uart;
     use core::ptr::{read_volatile, write_volatile};
     use utils::x86;
 
@@ -209,6 +210,7 @@ pub mod vga {
 
     impl Write for Writer {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            uart::puts(s);
             self.write_string(s);
             Ok(())
         }
