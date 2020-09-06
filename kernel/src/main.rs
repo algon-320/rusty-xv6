@@ -37,13 +37,12 @@ mod vm;
 use utils::prelude::*;
 use utils::{assigned_array, x86};
 
-use memory::pg_dir::{ent_flag, PageDirEntry, NPDENTRIES};
+use memory::pg_dir::{ent_flag, PageDirEntry, PageDirectory, NPDENTRIES};
 use memory::{p2v, v2p};
 
 #[used] // must not be removed
 #[no_mangle]
-#[link_section = ".rodata.entry_page_dir"]
-pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
+pub static entry_page_dir: PageDirectory = PageDirectory(assigned_array![
     PageDirEntry::zero(); NPDENTRIES;
 
     // Map VA's [0, 4MB) to PA's [0, 4MB)
@@ -57,7 +56,7 @@ pub static entry_page_dir: [PageDirEntry; NPDENTRIES] = assigned_array![
         PageDirEntry::new_large_page(
                 unsafe { PAddr::from_raw_unchecked(0x00000000) },
                 ent_flag::WRITABLE | ent_flag::PRESENT)
-];
+]);
 
 extern "C" {
     ///  first address after kernel loaded from ELF file

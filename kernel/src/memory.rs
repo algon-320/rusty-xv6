@@ -11,7 +11,19 @@ pub mod pg_dir {
     /// # PTEs per page table
     pub const NPTENTRIES: usize = 1024;
 
-    pub type PageDirectory = [PageDirEntry; NPDENTRIES];
+    #[repr(C, align(4096))]
+    pub struct PageDirectory(pub [PageDirEntry; NPDENTRIES]);
+    impl core::ops::Deref for PageDirectory {
+        type Target = [PageDirEntry; NPDENTRIES];
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl core::ops::DerefMut for PageDirectory {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
     pub type PageTable = [PageTableEntry; NPTENTRIES];
 
     #[derive(Clone, Copy)]

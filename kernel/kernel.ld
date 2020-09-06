@@ -19,8 +19,6 @@ SECTIONS {
     PROVIDE(etext = .);	/* Define the 'etext' symbol to this value */
 
     .rodata : {
-        . = ALIGN(4096);
-        *(.rodata.entry_page_dir)
         *(.rodata .rodata.* .gnu.linkonce.r.*)
     }
 
