@@ -314,11 +314,22 @@ ap_gdtdesc:
 .popsection
 "#}
 
+trait TestCaseFn {
+    fn run(&self);
+}
+impl<T: Fn()> TestCaseFn for T {
+    fn run(&self) {
+        print!("{} ... ", core::any::type_name::<T>());
+        self();
+        println!("ok!");
+    }
+}
+
 #[cfg(test)]
-fn test_runner(tests: &[&dyn Fn()]) {
+fn test_runner(tests: &[&dyn TestCaseFn]) {
     println!("Running {} tests", tests.len());
     for test in tests {
-        test();
+        test.run();
     }
     println!(console::print_color::LIGHT_GREEN; "all tests passed!");
 }
