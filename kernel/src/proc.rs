@@ -490,10 +490,7 @@ pub fn scheduler() -> ! {
         unsafe { (*p).state = ProcessState::Running };
 
         // switching
-        let sched_ctx = cli(|| {
-            let mut cpu = my_cpu();
-            &mut cpu.scheduler as *mut _
-        });
+        let sched_ctx = cli(|| &mut my_cpu().scheduler as *mut _);
         unsafe { switch(sched_ctx, (*p).context) };
 
         vm::switch_kvm();
