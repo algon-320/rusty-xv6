@@ -3,6 +3,7 @@ use super::lock::spin::SpinMutex;
 use super::memory::{pg_dir, seg};
 use super::trap;
 use core::cell::{RefCell, RefMut};
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use utils::x86;
 
@@ -286,25 +287,25 @@ impl core::fmt::Debug for Process {
 
 struct ProcessTable {
     initialized: bool,
-    table: [Option<*mut Process>; MAX_NPROC],
+    table: [Option<NonNull<Process>>; MAX_NPROC],
 }
 impl ProcessTable {
     pub fn init(&mut self) {
         assert!(!self.initialized);
         for p in unsafe { _PROC_ARENA.iter_mut() } {
             p.state = ProcessState::Unused;
-            self.put(p as *mut _);
+            self.put(NonNull::new(p as *mut _).unwrap());
         }
         self.initialized = true;
     }
 
-    pub fn put(&mut self, r: *mut Process) {
-        let idx = unsafe { r.offset_from(_PROC_ARENA.as_ptr()) };
+    pub fn put(&mut self, r: NonNull<Process>) {
+        let idx = unsafe { r.as_ptr().offset_from(_PROC_ARENA.as_ptr()) };
         assert!(self.table[idx as usize].replace(r).is_none());
     }
 
     /// Search unused process
-    pub fn get_unused(&mut self) -> Option<*mut Process> {
+    pub fn get_unused(&mut self) -> Option<NonNull<Process>> {
         for slot in self.table.iter_mut() {
             if slot.is_some() {
                 return slot.take();
@@ -313,10 +314,10 @@ impl ProcessTable {
         None
     }
 
-    pub fn get_runnable(&mut self) -> Option<*mut Process> {
+    pub fn get_runnable(&mut self) -> Option<NonNull<Process>> {
         for slot in self.table.iter_mut() {
             if let Some(p) = slot {
-                if unsafe { (*(*p)).state == ProcessState::Runnable } {
+                if unsafe { (*(*p).as_ptr()).state == ProcessState::Runnable } {
                     return slot.take();
                 }
             }
@@ -351,10 +352,10 @@ pub fn my_proc() -> *mut Process {
 /// If found, change state to EMBRYO and initialize
 /// state required to run in the kernel.
 /// Otherwise return 0.
-fn alloc_proc() -> Option<*mut Process> {
+fn alloc_proc() -> Option<NonNull<Process>> {
     let p = PROC_TABLE.lock().get_unused()?;
     unsafe {
-        let p = &mut *p;
+        let p = &mut *p.as_ptr();
         p.state = ProcessState::Embryo;
         p.pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);
 
@@ -363,7 +364,7 @@ fn alloc_proc() -> Option<*mut Process> {
             Some(page) => page as *mut _,
             None => {
                 p.state = ProcessState::Unused;
-                PROC_TABLE.lock().put(p);
+                PROC_TABLE.lock().put(NonNull::new(p).unwrap());
                 return None;
             }
         };
@@ -404,7 +405,7 @@ pub fn user_init() {
     use super::vm;
 
     let p = alloc_proc().expect("user_init: out of memory");
-    let p = unsafe { &mut *p };
+    let p = unsafe { &mut *p.as_ptr() };
     p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
     vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
     p.size = PAGE_SIZE;
@@ -425,7 +426,7 @@ pub fn user_init() {
     p.state = ProcessState::Runnable;
 
     unsafe { INIT_PROC = p };
-    PROC_TABLE.lock().put(p);
+    PROC_TABLE.lock().put(NonNull::new(p).unwrap());
 }
 
 /// Save the current registers on the stack, creating
@@ -480,7 +481,7 @@ pub fn scheduler() -> ! {
         });
 
         let p = match PROC_TABLE.lock().get_runnable() {
-            Some(p) => p,
+            Some(p) => p.as_ptr(),
             _ => continue,
         };
         cli(|| {
