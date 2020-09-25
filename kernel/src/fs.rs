@@ -1,75 +1,274 @@
-const BLOCK_SIZE: usize = 512;
-pub struct Buf {
-    flags: u8,
-    dev: u32,
-    block_no: u32,
-    ref_cnt: u32,
-    data: [u8; BLOCK_SIZE],
-}
-impl Buf {
-    pub const fn new() -> Self {
-        Self {
-            flags: 0,
-            dev: 0,
-            block_no: 0,
-            ref_cnt: 0,
-            data: [0; BLOCK_SIZE],
-        }
-    }
-}
+const BLK_SIZE: usize = 512;
 
 pub mod bcache {
-    use super::Buf;
-    const NBUF: usize = 30;
-
-    #[derive(Debug)]
-    struct BufLink {
-        next: usize,
-        prev: usize,
-    }
-
+    use super::BLK_SIZE;
+    use crate::ide;
     use crate::lock::sleep::SleepMutex;
     use crate::lock::spin::SpinMutex;
+    use core::cell::UnsafeCell;
+    use core::ptr::null_mut;
+    use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+
+    /// buffer has been read from disk
+    const B_VALID: u8 = 0x2;
+    /// buffer needs to be written to disk
+    const B_DIRTY: u8 = 0x4;
+
+    pub struct Buf {
+        // these pointer is gurded by BCACHE's lock
+        prev: UnsafeCell<*mut Buf>,
+        next: UnsafeCell<*mut Buf>,
+
+        dev: u32,
+        block_no: u32,
+        ref_cnt: AtomicUsize,
+        flags: AtomicU8,
+        body: SleepMutex<BufBody>,
+    }
+    pub struct BufBody {
+        pub data: [u8; BLK_SIZE],
+    }
+    impl Buf {
+        pub const fn zero() -> Self {
+            Self {
+                prev: UnsafeCell::new(null_mut()),
+                next: UnsafeCell::new(null_mut()),
+
+                dev: 0,
+                block_no: 0,
+                ref_cnt: AtomicUsize::new(0),
+                flags: AtomicU8::new(0),
+                body: SleepMutex::new(
+                    "buf",
+                    BufBody {
+                        data: [0; BLK_SIZE],
+                    },
+                ),
+            }
+        }
+        fn increment_ref_cnt(&self) {
+            self.ref_cnt.fetch_add(1, Ordering::SeqCst);
+        }
+        fn get_ref_cnt(&self) -> usize {
+            self.ref_cnt.load(Ordering::SeqCst)
+        }
+        fn decrement_ref_cnt(&self) {
+            self.ref_cnt.fetch_sub(1, Ordering::SeqCst);
+        }
+        pub fn unused(&self) -> bool {
+            // Enven if ref_cnt == 0, B_DIRTY indicates a buffer is in use
+            // because the log module has modified it but not yet committed it.
+            self.get_ref_cnt() == 0 && !self.dirty()
+        }
+        pub fn dirty(&self) -> bool {
+            (self.flags.load(Ordering::SeqCst) & B_DIRTY) != 0
+        }
+        pub fn valid(&self) -> bool {
+            (self.flags.load(Ordering::SeqCst) & B_VALID) != 0
+        }
+        pub fn set_flags(&self, flags: u8) {
+            self.flags.store(flags, Ordering::SeqCst);
+        }
+        pub fn new_ref(&'static self) -> BufRef {
+            self.increment_ref_cnt();
+            BufRef::new(self)
+        }
+    }
+    unsafe impl Send for Buf {}
+    unsafe impl Sync for Buf {}
+
+    #[repr(transparent)]
+    pub struct BufRef {
+        ptr: &'static Buf,
+    }
+    impl BufRef {
+        pub fn new(buf: &'static Buf) -> Self {
+            Self { ptr: buf }
+        }
+        pub fn dup(&'static self) -> Self {
+            self.new_ref()
+        }
+    }
+    impl Drop for BufRef {
+        fn drop(&mut self) {
+            self.decrement_ref_cnt();
+            if self.get_ref_cnt() == 0 {
+                BCACHE.lock().release(self.ptr);
+            }
+        }
+    }
+    impl core::ops::Deref for BufRef {
+        type Target = Buf;
+        fn deref(&self) -> &Self::Target {
+            self.ptr
+        }
+    }
+
     struct Bcache {
-        // last one is used for the head
-        link: SpinMutex<[BufLink; NBUF + 1]>,
-        buff: [SleepMutex<Buf>; NBUF + 1],
+        unused: *mut Buf,
+        being_used: *mut Buf,
     }
     impl Bcache {
-        pub const fn new() -> Self {
+        pub const fn zero() -> Self {
             Self {
-                link: SpinMutex::new("bcache", [BufLink { next: 0, prev: 0 }; NBUF + 1]),
-                buff: [SleepMutex::new("buffer", Buf::new()); NBUF + 1],
+                unused: null_mut(),
+                being_used: null_mut(),
             }
         }
-        pub fn init(&self) {
-            // initialize self.link
-            let mut guard = self.link.lock();
-            let link = guard.as_mut();
-            let head_idx = NBUF;
-            let mut head = BufLink {
-                next: head_idx,
-                prev: head_idx,
-            };
-            for i in 0..NBUF {
-                link[i].next = head.next;
-                link[i].prev = head_idx;
-                link[head.next].prev = i;
-                head.next = i;
+        pub fn init(&mut self) {
+            static mut BCACHE_ARENA: [Buf; N_BUF] = [Buf::zero(); N_BUF];
+            for i in 0..N_BUF {
+                unsafe {
+                    *BCACHE_ARENA[i].prev.get() = if i > 0 {
+                        &mut BCACHE_ARENA[i - 1]
+                    } else {
+                        null_mut()
+                    };
+                    *BCACHE_ARENA[i].next.get() = if i < N_BUF - 1 {
+                        &mut BCACHE_ARENA[i + 1]
+                    } else {
+                        null_mut()
+                    };
+                }
             }
-            link[NBUF] = head;
+            self.unused = unsafe { &mut BCACHE_ARENA[0] };
+        }
+        fn search_cached(&self, dev: u32, block_no: u32) -> Option<BufRef> {
+            // Is the block already cached?
+            let mut p: *const Buf = self.being_used;
+            while !p.is_null() {
+                let b = unsafe { &*p };
+                if b.dev == dev && b.block_no == block_no {
+                    return Some(b.new_ref());
+                }
+                p = unsafe { (*b.next.get()) as *const _ };
+            }
+            None
+        }
+        fn take_unused(&mut self) -> Option<&'static mut Buf> {
+            if self.unused.is_null() {
+                None
+            } else {
+                unsafe {
+                    let b = &mut *self.unused;
+                    assert_eq!(*b.prev.get(), null_mut());
+
+                    let next = *b.next.get();
+                    self.unused = next;
+                    if !next.is_null() {
+                        *(*next).prev.get() = null_mut();
+                    }
+
+                    *b.next.get() = self.being_used;
+                    if !self.being_used.is_null() {
+                        *(*self.being_used).prev.get() = b;
+                    }
+                    self.being_used = b;
+
+                    Some(b)
+                }
+            }
+        }
+        fn get(&mut self, dev: u32, block_no: u32) -> BufRef {
+            self.search_cached(dev, block_no)
+                .or_else(|| {
+                    let b = self.take_unused()?;
+                    b.dev = dev;
+                    b.block_no = block_no;
+                    b.ref_cnt = AtomicUsize::new(0);
+                    b.flags = AtomicU8::new(0);
+                    Some(b.new_ref())
+                })
+                .expect("Bcache::get: no buffers")
+        }
+        pub fn read(&mut self, dev: u32, block_no: u32) -> BufRef {
+            let b = self.get(dev, block_no);
+            if !b.valid() {
+                ide::read_from_disk(&b);
+            }
+            b
+        }
+        fn release(&mut self, buf: &'static Buf) {
+            assert_eq!(buf.get_ref_cnt(), 0);
+            unsafe {
+                let p = *buf.prev.get();
+                let n = *buf.next.get();
+                if !p.is_null() {
+                    *(*p).next.get() = n;
+                } else {
+                    self.being_used = n;
+                }
+                if !n.is_null() {
+                    *(*n).prev.get() = p;
+                }
+
+                if !self.unused.is_null() {
+                    *(*self.unused).prev.get() = buf as *const _ as *mut _;
+                }
+                *buf.prev.get() = null_mut();
+                *buf.next.get() = self.unused;
+                self.unused = buf as *const _ as *mut _;
+            }
         }
     }
+    unsafe impl Send for Bcache {}
 
-    static BCACHE: Bcache = Bcache::new();
+    #[test_case]
+    fn test_bcache() {
+        init();
+        assert!(BCACHE.lock().being_used.is_null());
+
+        let b1 = BCACHE.lock().get(0, 1);
+        assert_eq!(b1.get_ref_cnt(), 1);
+        let x = unsafe { &*BCACHE.lock().being_used };
+        assert_eq!(x.block_no, 1);
+        let b2 = BCACHE.lock().get(0, 2);
+        assert_eq!(b2.get_ref_cnt(), 1);
+        let x = unsafe { &*BCACHE.lock().being_used };
+        assert_eq!(x.block_no, 2);
+        let b3 = BCACHE.lock().get(0, 3);
+        assert_eq!(b3.get_ref_cnt(), 1);
+        let x = unsafe { &*BCACHE.lock().being_used };
+        assert_eq!(x.block_no, 3);
+
+        // being_used --> [b3] <--> [b2] <--> [b1]
+
+        drop(b2);
+
+        // being_used --> [b3] <--> [b1]
+        let b = unsafe { &*BCACHE.lock().unused };
+        let x = unsafe { &*BCACHE.lock().being_used };
+        assert_eq!(b3.ptr as *const _, x as *const _);
+        assert_eq!(b.block_no, 2);
+        assert_eq!(x.block_no, 3);
+
+        drop(b3);
+
+        // being_used --> [b1]
+        let b = unsafe { &*BCACHE.lock().unused };
+        let x = unsafe { &*BCACHE.lock().being_used };
+        assert_eq!(b1.ptr as *const _, x as *const _);
+        assert_eq!(b.block_no, 3);
+        assert_eq!(x.block_no, 1);
+
+        drop(b1);
+        let b = unsafe { &*BCACHE.lock().unused };
+        assert_eq!(b.block_no, 1);
+
+        assert!(BCACHE.lock().being_used.is_null());
+    }
+
+    const N_BUF: usize = 30;
+    static BCACHE: SpinMutex<Bcache> = SpinMutex::new("bcache", Bcache::zero());
 
     pub fn init() {
-        BCACHE.init();
+        let mut bcache = BCACHE.lock();
+        bcache.init();
     }
 }
 
 const N_DIRECT: usize = 12;
-const N_INDIRECT: usize = BLOCK_SIZE / core::mem::size_of::<u32>();
+const N_INDIRECT: usize = BLK_SIZE / core::mem::size_of::<u32>();
 
 // Directory is a file containing a sequence of dirent structures.
 const DIR_SIZE: usize = 14;
@@ -119,46 +318,44 @@ pub mod inode {
     use crate::lock::spin::SpinMutex;
     use crate::proc::my_proc;
     use core::cell::UnsafeCell;
+    use core::ptr::null_mut;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     const ROOT_DEV: usize = 1;
     const ROOT_INO: usize = 1;
 
-    /// maximum number of active i-nodes
-    const N_INODE: usize = 50;
-
-    static ICACHE: SpinMutex<[Inode; N_INODE]> = SpinMutex::new("icache", [Inode::zero(); N_INODE]);
-
     /// in-memory copy of an inode
     pub struct Inode {
-        dev: usize,                 // Device number
-        inum: usize,                // Inode number
-        ref_cnt: UnsafeCell<usize>, // Reference count
+        prev: UnsafeCell<*mut Inode>,
+        next: UnsafeCell<*mut Inode>,
+
+        dev: usize,           // Device number
+        inum: usize,          // Inode number
+        ref_cnt: AtomicUsize, // Reference count
         body: SleepMutex<InodeBody>,
     }
     impl Inode {
         pub const fn zero() -> Self {
             Self {
+                prev: UnsafeCell::new(null_mut()),
+                next: UnsafeCell::new(null_mut()),
+
                 dev: 0,
                 inum: 0,
-                ref_cnt: UnsafeCell::new(0),
+                ref_cnt: AtomicUsize::new(0),
                 body: SleepMutex::new("inode", InodeBody::zero()),
             }
         }
-        /// Safety: ICACHE must be locked.
-        unsafe fn increment_ref_cnt(&self) {
-            *self.ref_cnt.get() += 1;
+        fn increment_ref_cnt(&self) {
+            self.ref_cnt.fetch_add(1, Ordering::SeqCst);
         }
-        /// Safety: ICACHE must be locked.
-        unsafe fn get_ref_cnt(&self) -> usize {
-            *self.ref_cnt.get()
+        fn get_ref_cnt(&self) -> usize {
+            self.ref_cnt.load(Ordering::SeqCst)
         }
-        /// Safety: ICACHE must be locked.
-        unsafe fn decrement_ref_cnt(&self) {
-            *self.ref_cnt.get() += 1;
+        fn decrement_ref_cnt(&self) {
+            self.ref_cnt.fetch_sub(1, Ordering::SeqCst);
         }
-        /// Safety: ICACHE must be locked.
-        pub unsafe fn new_ref(&self) -> InodeRef {
+        pub fn new_ref(&'static self) -> InodeRef {
             self.increment_ref_cnt();
             InodeRef::new(self)
         }
@@ -168,11 +365,13 @@ pub mod inode {
             for addr in body.addrs[..super::N_DIRECT].iter_mut() {
                 if *addr != 0 {
                     todo!(); // bfree
-                    *addr = 0;
                 }
             }
         }
     }
+    unsafe impl Send for Inode {}
+    unsafe impl Sync for Inode {}
+
     pub struct InodeBody {
         valid: bool,
         type_: FileType,
@@ -216,20 +415,16 @@ pub mod inode {
         }
     }
 
+    #[repr(transparent)]
     pub struct InodeRef {
-        ptr: core::ptr::NonNull<Inode>, // use as non-null *const Inode
+        ptr: &'static Inode,
     }
     impl InodeRef {
-        pub fn new(ip: &Inode) -> Self {
-            Self {
-                ptr: unsafe { core::ptr::NonNull::new_unchecked(ip as *const _ as *mut _) },
-            }
+        pub fn new(ip: &'static Inode) -> Self {
+            Self { ptr: ip }
         }
-    }
-    impl core::clone::Clone for InodeRef {
-        fn clone(&self) -> Self {
-            let _ = ICACHE.lock();
-            unsafe { self.new_ref() }
+        pub fn dup(&'static self) -> Self {
+            self.new_ref()
         }
     }
     impl Drop for InodeRef {
@@ -237,18 +432,17 @@ pub mod inode {
             log!("InodeRef drop");
             let mut body = self.body.lock();
 
+            self.decrement_ref_cnt();
             if body.valid && body.nlink == 0 {
-                let ref_cnt = {
-                    let _guard = ICACHE.lock();
-                    unsafe { self.get_ref_cnt() }
-                };
-                if ref_cnt == 1 {
+                if self.get_ref_cnt() == 0 {
                     // inode has no links and no other references: truncate and free.
                     // TODO: trunc
                     body.type_ = FileType::Invalid;
                     // TODO: update
                     body.valid = false;
-                    todo!()
+                    todo!();
+
+                    ICACHE.lock().release(self.ptr);
                 }
             }
         }
@@ -256,9 +450,113 @@ pub mod inode {
     impl core::ops::Deref for InodeRef {
         type Target = Inode;
         fn deref(&self) -> &Self::Target {
-            unsafe { &*self.ptr.as_ptr() }
+            self.ptr
         }
     }
+
+    pub struct Icache {
+        unused: *mut Inode,
+        being_used: *mut Inode,
+    }
+    impl Icache {
+        pub const fn zero() -> Self {
+            Self {
+                unused: null_mut(),
+                being_used: null_mut(),
+            }
+        }
+        pub fn init(&mut self) {
+            static mut ICACHE_ARENA: [Inode; N_INODE] = [Inode::zero(); N_INODE];
+            for i in 0..N_INODE {
+                unsafe {
+                    *ICACHE_ARENA[i].prev.get() = if i > 0 {
+                        &mut ICACHE_ARENA[i - 1]
+                    } else {
+                        null_mut()
+                    };
+                    *ICACHE_ARENA[i].next.get() = if i < N_INODE - 1 {
+                        &mut ICACHE_ARENA[i + 1]
+                    } else {
+                        null_mut()
+                    };
+                }
+            }
+            self.unused = unsafe { &mut ICACHE_ARENA[0] };
+        }
+        fn search_cached(&self, dev: usize, inum: usize) -> Option<InodeRef> {
+            let mut p = self.being_used;
+            while !p.is_null() {
+                let i = unsafe { &*p };
+                if i.dev == dev && i.inum == inum {
+                    return Some(i.new_ref());
+                }
+                p = unsafe { *i.next.get() };
+            }
+            None
+        }
+        fn take_unused(&mut self) -> Option<&'static mut Inode> {
+            if self.unused.is_null() {
+                None
+            } else {
+                unsafe {
+                    let ip = &mut *self.unused;
+                    assert_eq!(*ip.prev.get(), null_mut());
+
+                    let next = *ip.next.get();
+                    self.unused = next;
+                    if !next.is_null() {
+                        *(*next).prev.get() = null_mut();
+                    }
+
+                    *ip.next.get() = self.being_used;
+                    if !self.being_used.is_null() {
+                        *(*self.being_used).prev.get() = ip;
+                    }
+                    self.being_used = ip;
+
+                    Some(ip)
+                }
+            }
+        }
+        pub fn get(&mut self, dev: usize, inum: usize) -> InodeRef {
+            self.search_cached(dev, inum)
+                .or_else(|| {
+                    let ip = self.take_unused()?;
+                    ip.dev = dev;
+                    ip.inum = inum;
+                    ip.ref_cnt = AtomicUsize::new(0);
+                    Some(ip.new_ref())
+                })
+                .expect("inode::get: no inodes")
+        }
+        fn release(&mut self, ip: &'static Inode) {
+            assert_eq!(ip.get_ref_cnt(), 0);
+            unsafe {
+                let p = *ip.prev.get();
+                let n = *ip.next.get();
+                if !p.is_null() {
+                    *(*p).next.get() = n;
+                } else {
+                    self.being_used = n;
+                }
+                if !n.is_null() {
+                    *(*n).prev.get() = p;
+                }
+
+                if !self.unused.is_null() {
+                    *(*self.unused).prev.get() = ip as *const _ as *mut _;
+                }
+                *ip.prev.get() = null_mut();
+                *ip.next.get() = self.unused;
+                self.unused = ip as *const _ as *mut _;
+            }
+        }
+    }
+    unsafe impl Send for Icache {}
+
+    /// maximum number of active i-nodes
+    const N_INODE: usize = 50;
+    static ICACHE: SpinMutex<Icache> = SpinMutex::new("icache", Icache::zero());
 
     #[derive(Debug, Eq, PartialEq)]
     #[repr(u16)]
@@ -277,31 +575,8 @@ pub mod inode {
         size: usize,     // Size of file in bytes
     }
 
-    fn init() {
-        todo!()
-    }
-
-    fn get(dev: usize, inum: usize) -> InodeRef {
-        let mut icache = ICACHE.lock();
-
-        let mut empty: *mut Inode = core::ptr::null_mut();
-        for ip in icache.iter_mut() {
-            let ref_cnt = unsafe { ip.get_ref_cnt() };
-            if ref_cnt > 0 && ip.dev == dev && ip.inum == inum {
-                return unsafe { ip.new_ref() }; // ref_cnt += 1
-            }
-            if empty.is_null() && ref_cnt == 0 {
-                empty = ip;
-            }
-        }
-        assert!(!empty.is_null(), "inode::get: no inodes");
-
-        let ip = unsafe { &mut *empty };
-        ip.dev = dev;
-        ip.inum = inum;
-        ip.ref_cnt = UnsafeCell::new(0);
-        ip.body.lock().valid = false;
-        unsafe { ip.new_ref() } // ref_cnt -> 1
+    pub fn init() {
+        ICACHE.lock().init();
     }
 
     fn dir_lookup(dev: usize, dir: &InodeBody, name: &[u8]) -> Option<(InodeRef, usize)> {
@@ -322,7 +597,7 @@ pub mod inode {
             let de: &DirEnt = unsafe { &*de.as_ptr() };
             if de.inum != 0 {
                 if name == de.name {
-                    return Some((get(dev, de.inum as usize), off));
+                    return Some((ICACHE.lock().get(dev, de.inum as usize), off));
                 }
             }
             off += SZ;
@@ -367,10 +642,10 @@ pub mod inode {
 
     fn name_x(path: &str, name_iparent: bool) -> Option<InodeRef> {
         let mut ip = match path {
-            "/" => get(ROOT_DEV, ROOT_INO),
+            "/" => ICACHE.lock().get(ROOT_DEV, ROOT_INO),
             _ =>
             // start traverse from the current working directory
-            unsafe { (*my_proc()).cwd.as_ref().unwrap().clone() }
+            unsafe { (*my_proc()).cwd.as_ref().unwrap().dup() }
         };
 
         let mut path = path.as_bytes();
@@ -460,4 +735,9 @@ pub mod file {
     }
 
     pub const CONSOLE: usize = 1;
+}
+
+pub fn init() {
+    bcache::init();
+    inode::init();
 }

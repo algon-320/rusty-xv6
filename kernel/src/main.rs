@@ -98,7 +98,7 @@ pub extern "C" fn main() -> ! {
     uart::puts("xv6...\n"); // Announce that we're here.
     proc::init(); // process table
     trap::init(); // trap vectors
-    fs::bcache::init(); // buffer cache
+    fs::init(); // buffer cache, inode cache
     ide::init(); // disk
 
     start_others(); // start other processors

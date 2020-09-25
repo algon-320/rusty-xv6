@@ -1,8 +1,8 @@
-use super::fs::Buf;
-use super::lock::spin::SpinMutex;
+// use super::fs::Buf;
+// use super::lock::spin::SpinMutex;
 use utils::x86;
 
-static IDE_QUEUE: SpinMutex<Option<&'static Buf>> = SpinMutex::new("ide", None);
+// static IDE_QUEUE: SpinMutex<Option<&'static Buf>> = SpinMutex::new("ide", None);
 static mut HAVE_DISK: bool = false;
 
 const IDE_BSY: u8 = 0x80;
@@ -43,4 +43,12 @@ pub fn init() {
     unsafe { dbg!(HAVE_DISK) };
     // Switch back to disk 0
     x86::outb(PORT_BASE + 6, 0xE0 | (0 << 4));
+}
+
+use super::fs;
+pub fn read_from_disk(b: &fs::bcache::BufRef) {
+    todo!()
+}
+pub fn write_to_disk(b: &fs::bcache::BufRef) {
+    todo!()
 }
