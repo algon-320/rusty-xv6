@@ -1,7 +1,8 @@
-use super::fs::inode::InodeRef;
+use super::fs::inode::Inode;
 use super::lock::spin::SpinMutex;
 use super::memory::{pg_dir, seg};
 use super::trap;
+use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -241,7 +242,7 @@ pub struct Process {
     pub pid: u32,                           // Process ID
     pub trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
     pub context: *mut Context,              // swtch() here to run process
-    pub cwd: Option<InodeRef>,              // Current directory
+    pub cwd: Option<Arc<Inode>>,            // Current directory
 
     pub name: [u8; 16], // Process name (debugging)
 }
