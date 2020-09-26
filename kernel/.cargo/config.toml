@@ -4,7 +4,7 @@ target-dir = "../out/target/kernel"
 rustflags = ["-C", "link-args=-Tkernel.ld"]
 
 [unstable]
-build-std = ["core"]
+build-std = ["core", "alloc"]
 
 [target.i386]
 runner = "qemu_runner.sh"

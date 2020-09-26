@@ -10,12 +10,14 @@
 #![feature(ptr_offset_from)]
 #![feature(ptr_internals)]
 #![feature(custom_test_frameworks)]
+#![feature(alloc_error_handler)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+extern crate alloc;
 extern crate rlibc;
 
 #[macro_use]
@@ -100,7 +102,6 @@ pub extern "C" fn main() -> ! {
     trap::init(); // trap vectors
     fs::init(); // buffer cache, inode cache
     ide::init(); // disk
-
     start_others(); // start other processors
 
     // must come after start_others()
@@ -141,7 +142,7 @@ fn start_others() {
             continue;
         }
 
-        let stack = kalloc::kalloc().unwrap() as *mut c_void;
+        let stack = kalloc::kalloc().unwrap().as_ptr() as *mut c_void;
         let code = p2v(PAddr::<*mut c_void>::from_raw(0x7000));
         unsafe {
             let code = code.mut_ptr();

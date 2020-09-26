@@ -11,3 +11,4 @@ lto = true
 [dependencies]
 utils = { path = "../utils" }
 rlibc = "1.0.0"
+linked_list_allocator = { version = "0.8.6", features = [] }

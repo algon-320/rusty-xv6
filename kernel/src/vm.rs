@@ -4,6 +4,7 @@ use super::memory::pg_dir::{
 };
 use super::memory::{p2v, v2p, Page};
 use super::memory::{DEVSPACE, EXTMEM, KERNBASE, KERNLINK, PAGE_SIZE, PHYSTOP};
+use core::ptr::NonNull;
 use utils::prelude::*;
 use utils::x86;
 
@@ -52,7 +53,7 @@ fn walk_page_dir(
         if !alloc {
             return None;
         }
-        let pg_tab = kalloc::kalloc()? as *mut PageTable;
+        let pg_tab = kalloc::kalloc()?.as_ptr() as *mut PageTable;
         let pg_tab = VAddr::from(pg_tab);
 
         // Make sure all those PTE_P bits are zero.
@@ -138,7 +139,7 @@ pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
         },
     ];
 
-    let pg_dir = kalloc::kalloc()? as *mut PageDirectory;
+    let pg_dir = kalloc::kalloc()?.as_ptr() as *mut PageDirectory;
     unsafe { rlibc::memset(pg_dir as *mut u8, 0, PAGE_SIZE) };
     if p2v(PHYSTOP) > DEVSPACE {
         panic!("PHYSTOP too high");
@@ -184,9 +185,10 @@ fn free_vm(pg_dir: &mut PageDirectory) {
         .filter(|ent| ent.flags_check(ent_flag::PRESENT))
     {
         let v = p2v(ent.addr()).cast::<Page>();
-        kalloc::kfree(v.mut_ptr());
+        kalloc::kfree(unsafe { NonNull::new_unchecked(v.mut_ptr()) });
     }
-    kalloc::kfree(pg_dir as *mut _ as *mut Page);
+    let page_ptr = pg_dir as *mut _ as *mut Page;
+    kalloc::kfree(unsafe { NonNull::new_unchecked(page_ptr) });
 }
 
 pub mod uvm {
@@ -201,7 +203,7 @@ pub mod uvm {
     /// the size of init_code must be less than a page.
     pub fn init(pg_dir: &mut pg_dir::PageDirectory, init_code: &[u8]) {
         assert!(init_code.len() < PAGE_SIZE);
-        let mem = crate::kalloc::kalloc().unwrap() as *mut u8;
+        let mem = crate::kalloc::kalloc().unwrap().as_ptr() as *mut u8;
         unsafe { rlibc::memset(mem, 0, PAGE_SIZE) };
         map_pages(
             pg_dir,

@@ -361,7 +361,7 @@ fn alloc_proc() -> Option<NonNull<Process>> {
 
         // Allocate kernel stack.
         p.kernel_stack = match super::kalloc::kalloc() {
-            Some(page) => page as *mut _,
+            Some(page) => page.as_ptr() as *mut _,
             None => {
                 p.state = ProcessState::Unused;
                 PROC_TABLE.lock().put(NonNull::new(p).unwrap());
