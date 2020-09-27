@@ -367,7 +367,7 @@ impl ProcessTable {
         let p = self.alloc_proc();
         {
             let mut p = p.lock();
-            p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
+            p.pg_dir = vm::setup_kvm().expect("user_init: out of memory").as_ptr();
             vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
             p.size = PAGE_SIZE;
             {

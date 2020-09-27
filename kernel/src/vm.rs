@@ -100,7 +100,7 @@ fn map_pages(
 }
 
 /// Set up kernel part of a page table.
-pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
+pub fn setup_kvm() -> Option<NonNull<PageDirectory>> {
     let data_vaddr = {
         extern "C" {
             static data: u8;
@@ -144,30 +144,34 @@ pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
     if p2v(PHYSTOP) > DEVSPACE {
         panic!("PHYSTOP too high");
     }
-    let pg_dir = unsafe { &mut *pg_dir };
-    for k in &kmap {
-        if map_pages(
-            pg_dir,
-            k.virt.cast(),
-            k.end.raw().wrapping_sub(k.start.raw()),
-            k.start,
-            k.perm,
-        )
-        .is_none()
-        {
-            println!(super::console::print_color::LIGHT_RED; "map_pages fail");
-            free_vm(pg_dir);
-            return None;
+    {
+        let pg_dir = unsafe { &mut *pg_dir };
+        for k in &kmap {
+            if map_pages(
+                pg_dir,
+                k.virt.cast(),
+                k.end.raw().wrapping_sub(k.start.raw()),
+                k.start,
+                k.perm,
+            )
+            .is_none()
+            {
+                println!(super::console::print_color::LIGHT_RED; "map_pages fail");
+                free_vm(pg_dir);
+                return None;
+            }
         }
     }
-    Some(pg_dir)
+    Some(NonNull::new(pg_dir).unwrap())
 }
 
 static mut KPG_DIR: *mut PageDirectory = core::ptr::null_mut();
+
 /// Allocate one page table for the machine for the kernel address
 /// space for scheduler processes.
 pub fn kvmalloc() {
-    unsafe { KPG_DIR = setup_kvm().expect("kvmalloc failed") };
+    unsafe { KPG_DIR = setup_kvm().expect("kvmalloc failed").as_ptr() };
+
     // Now, we switch the page table from entry_page_dir to kpg_dir
     switch_kvm();
 }

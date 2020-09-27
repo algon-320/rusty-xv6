@@ -18,9 +18,18 @@ unsafe impl GlobalAlloc for KernelHeap {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        debug_assert!(!ptr.is_null());
         self.heap
             .lock()
             .deallocate(NonNull::new_unchecked(ptr), layout);
+    }
+}
+impl KernelHeap {
+    pub unsafe fn init(&self, start: usize, size: usize) {
+        self.heap.lock().init(start, size);
+    }
+    pub unsafe fn extend(&self, size: usize) {
+        self.heap.lock().extend(size);
     }
 }
 #[global_allocator]
@@ -40,11 +49,11 @@ fn alloc_error_handler(layout: Layout) -> ! {
 ///      after installing a full page table that maps them on all cores.
 pub fn init1(start: VAddr<u8>, end: VAddr<u8>) {
     let size = end.raw() - start.raw();
-    unsafe { HEAP.heap.lock().init(start.raw(), size) };
+    unsafe { HEAP.init(start.raw(), size) };
 }
 pub fn init2(start: VAddr<u8>, end: VAddr<u8>) {
     let size = end.raw() - start.raw();
-    unsafe { HEAP.heap.lock().extend(size) };
+    unsafe { HEAP.extend(size) };
 }
 
 /// Free the page of physical memory pointed at by page,
