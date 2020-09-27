@@ -7,7 +7,6 @@
 #![feature(const_fn)]
 #![feature(const_raw_ptr_to_usize_cast)]
 #![feature(const_in_array_repeat_expressions)]
-#![feature(ptr_offset_from)]
 #![feature(ptr_internals)]
 #![feature(custom_test_frameworks)]
 #![feature(alloc_error_handler)]
