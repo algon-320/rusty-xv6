@@ -1,11 +1,13 @@
-use super::fs::inode::Inode;
+use super::fs::inode;
 use super::lock::spin::SpinMutex;
-use super::memory::{pg_dir, seg};
+use super::memory::{pg_dir, seg, PAGE_SIZE};
 use super::trap;
+use super::vm;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
+use lazy_static::lazy_static;
 use utils::x86;
 
 /// Task state segment format
@@ -114,8 +116,8 @@ pub struct Cpu {
     pub num_cli: i32,
     /// Were interrupts enabled before push_cli?
     pub int_enabled: bool,
-    /// The process running on this cpu or null
-    pub current_proc: *mut Process,
+    /// The process running on this cpu or None
+    pub current_proc: Option<ProcessRef>,
 }
 pub struct CpuShared {
     /// Local APIC ID
@@ -135,7 +137,7 @@ impl CpuShared {
                 gdt: seg::GDT_ZERO,
                 num_cli: 0,
                 int_enabled: false,
-                current_proc: core::ptr::null_mut(),
+                current_proc: None,
             }),
         }
     }
@@ -193,6 +195,12 @@ pub fn my_cpu() -> RefMut<'static, Cpu> {
         .unwrap()
 }
 
+/// Disable interrupts so that we are not rescheduled
+/// while reading proc from the cpu structure
+pub fn my_proc() -> ProcessRef {
+    super::lock::cli(|| my_cpu().current_proc.clone().unwrap())
+}
+
 /// Saved registers for kernel context switches.
 /// Don't need to save all the segment registers (%cs, etc),
 /// because they are constant across kernel contexts.
@@ -242,7 +250,7 @@ pub struct Process {
     pub pid: u32,                           // Process ID
     pub trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
     pub context: *mut Context,              // swtch() here to run process
-    pub cwd: Option<Arc<Inode>>,            // Current directory
+    pub cwd: Option<Arc<inode::Inode>>,     // Current directory
 
     pub name: [u8; 16], // Process name (debugging)
 }
@@ -285,149 +293,116 @@ impl core::fmt::Debug for Process {
             .finish()
     }
 }
+unsafe impl Send for Process {}
+
+pub type ProcessRef = Arc<SpinMutex<Process>>;
 
 struct ProcessTable {
-    initialized: bool,
-    table: [Option<NonNull<Process>>; MAX_NPROC],
+    runnable: Vec<ProcessRef>,
+    init: Option<ProcessRef>,
+    next_pid: u32,
 }
 impl ProcessTable {
-    pub fn init(&mut self) {
-        assert!(!self.initialized);
-        for p in unsafe { _PROC_ARENA.iter_mut() } {
-            p.state = ProcessState::Unused;
-            self.put(NonNull::new(p as *mut _).unwrap());
+    pub fn empty() -> Self {
+        Self {
+            runnable: Vec::new(),
+            init: None,
+            next_pid: 1,
         }
-        self.initialized = true;
+    }
+    pub fn put(&mut self, p: ProcessRef) {
+        self.runnable.push(p);
+    }
+    pub fn get_runnable(&mut self) -> Option<ProcessRef> {
+        self.runnable.pop()
     }
 
-    pub fn put(&mut self, r: NonNull<Process>) {
-        let idx = unsafe { r.as_ptr().offset_from(_PROC_ARENA.as_ptr()) };
-        assert!(self.table[idx as usize].replace(r).is_none());
+    fn take_next_pid(&mut self) -> u32 {
+        let pid = self.next_pid;
+        self.next_pid += 1;
+        pid
     }
 
-    /// Search unused process
-    pub fn get_unused(&mut self) -> Option<NonNull<Process>> {
-        for slot in self.table.iter_mut() {
-            if slot.is_some() {
-                return slot.take();
-            }
-        }
-        None
-    }
-
-    pub fn get_runnable(&mut self) -> Option<NonNull<Process>> {
-        for slot in self.table.iter_mut() {
-            if let Some(p) = slot {
-                if unsafe { (*(*p).as_ptr()).state == ProcessState::Runnable } {
-                    return slot.take();
-                }
-            }
-        }
-        None
-    }
-}
-unsafe impl Send for ProcessTable {}
-
-static mut _PROC_ARENA: [Process; MAX_NPROC] = [Process::zero(); MAX_NPROC];
-static PROC_TABLE: SpinMutex<ProcessTable> = SpinMutex::new(
-    "ptable",
-    ProcessTable {
-        initialized: false,
-        table: [None; MAX_NPROC],
-    },
-);
-static mut INIT_PROC: *mut Process = core::ptr::null_mut();
-static NEXT_PID: AtomicU32 = AtomicU32::new(1);
-
-pub fn init() {
-    PROC_TABLE.lock().init();
-}
-
-/// Disable interrupts so that we are not rescheduled
-/// while reading proc from the cpu structure
-pub fn my_proc() -> *mut Process {
-    super::lock::cli(|| my_cpu().current_proc)
-}
-
-/// Look in the process table for an UNUSED proc.
-/// If found, change state to EMBRYO and initialize
-/// state required to run in the kernel.
-/// Otherwise return 0.
-fn alloc_proc() -> Option<NonNull<Process>> {
-    let p = PROC_TABLE.lock().get_unused()?;
-    unsafe {
-        let p = &mut *p.as_ptr();
+    /// Create new process.
+    pub fn alloc_proc(&mut self) -> ProcessRef {
+        let mut p = Process::zero();
         p.state = ProcessState::Embryo;
-        p.pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);
+        p.pid = self.take_next_pid();
 
         // Allocate kernel stack.
-        p.kernel_stack = match super::kalloc::kalloc() {
-            Some(page) => page.as_ptr() as *mut _,
-            None => {
-                p.state = ProcessState::Unused;
-                PROC_TABLE.lock().put(NonNull::new(p).unwrap());
-                return None;
+        p.kernel_stack = super::kalloc::kalloc().unwrap().as_ptr() as *mut u8;
+        unsafe {
+            let sp = p.kernel_stack.add(super::memory::KSTACKSIZE);
+            use core::mem::size_of;
+
+            // Leave room for trap frame.
+            let sp = sp.sub(size_of::<trap::TrapFrame>());
+            p.trap_frame = sp as *mut _;
+            rlibc::memset(sp, 0, size_of::<trap::TrapFrame>());
+
+            // Set up new context to start executing at forkret,
+            // which returns to trapret.
+            type FnPtr = unsafe extern "C" fn();
+            let sp = sp.sub(size_of::<FnPtr>());
+            {
+                let fp = sp as *mut FnPtr;
+                *fp = trap::trapret as FnPtr;
             }
-        };
-        let sp = p.kernel_stack.add(super::memory::KSTACKSIZE);
-        use core::mem::size_of;
 
-        // Leave room for trap frame.
-        let sp = sp.sub(size_of::<trap::TrapFrame>());
-        p.trap_frame = sp as *mut _;
-        rlibc::memset(sp, 0, size_of::<trap::TrapFrame>());
-
-        // Set up new context to start executing at forkret,
-        // which returns to trapret.
-        type FnPtr = unsafe extern "C" fn();
-        let sp = sp.sub(size_of::<FnPtr>());
-        {
-            let fp = sp as *mut FnPtr;
-            *fp = trap::trapret as FnPtr;
+            let sp = sp.sub(size_of::<Context>());
+            {
+                p.context = sp as *mut Context;
+                let mut ctx = Context::zero();
+                ctx.eip = forkret as usize as u32;
+                *p.context = ctx;
+            }
         }
-
-        let sp = sp.sub(size_of::<Context>());
-        {
-            p.context = sp as *mut Context;
-            let mut ctx = Context::zero();
-            ctx.eip = forkret as usize as u32;
-            *p.context = ctx;
-        }
+        Arc::new(SpinMutex::new("process", p))
     }
-    Some(p)
+
+    /// Set up the first user process.
+    fn user_init(&mut self) {
+        const INIT_CODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/init.bin"));
+
+        let p = self.alloc_proc();
+        {
+            let mut p = p.lock();
+            p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
+            vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
+            p.size = PAGE_SIZE;
+            {
+                let tf = unsafe { &mut *p.trap_frame };
+                tf.cs = (seg::SEG_UCODE << 3) as u16 | seg::dpl::USER as u16;
+                let udata = (seg::SEG_UDATA << 3) as u16 | seg::dpl::USER as u16;
+                tf.ds = udata;
+                tf.es = udata;
+                tf.ss = udata;
+                tf.eflags = x86::eflags::FL_IF;
+                tf.esp = PAGE_SIZE;
+                tf.eip = 0; // begin of init
+            }
+            let name = b"init\0";
+            p.name[..name.len()].copy_from_slice(name);
+            p.cwd = inode::from_name("/");
+            p.state = ProcessState::Runnable;
+        }
+
+        self.init = Some(p.clone());
+        self.put(p);
+    }
 }
 
-/// Set up first user process.
+lazy_static! {
+    static ref PROC_TABLE: SpinMutex<ProcessTable> =
+        SpinMutex::new("ptable", ProcessTable::empty());
+}
+
+pub fn init() {
+    lazy_static::initialize(&PROC_TABLE);
+}
+
 pub fn user_init() {
-    const INIT_CODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/init.bin"));
-
-    use super::fs::inode;
-    use super::memory::PAGE_SIZE;
-    use super::vm;
-
-    let p = alloc_proc().expect("user_init: out of memory");
-    let p = unsafe { &mut *p.as_ptr() };
-    p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
-    vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
-    p.size = PAGE_SIZE;
-    {
-        let tf = unsafe { &mut *p.trap_frame };
-        tf.cs = (seg::SEG_UCODE << 3) as u16 | seg::dpl::USER as u16;
-        let udata = (seg::SEG_UDATA << 3) as u16 | seg::dpl::USER as u16;
-        tf.ds = udata;
-        tf.es = udata;
-        tf.ss = udata;
-        tf.eflags = x86::eflags::FL_IF;
-        tf.esp = PAGE_SIZE;
-        tf.eip = 0; // begin of init
-    }
-    let name = b"init\0";
-    p.name[..name.len()].copy_from_slice(name);
-    p.cwd = inode::from_name("/");
-    p.state = ProcessState::Runnable;
-
-    unsafe { INIT_PROC = p };
-    PROC_TABLE.lock().put(NonNull::new(p).unwrap());
+    PROC_TABLE.lock().user_init();
 }
 
 /// Save the current registers on the stack, creating
@@ -471,31 +446,27 @@ pub fn scheduler() -> ! {
     println!(super::console::print_color::CYAN; "[cpu:{}] scheduler start", my_cpu_id());
 
     use super::lock::cli;
-    use super::vm;
 
     // Enable interrupts on this processor.
     x86::sti();
 
     loop {
         cli(|| {
-            my_cpu().current_proc = core::ptr::null_mut();
+            my_cpu().current_proc = None;
         });
+        if let Some(p) = PROC_TABLE.lock().get_runnable() {
+            cli(|| {
+                my_cpu().current_proc = Some(p.clone());
+            });
+            vm::uvm::switch(&p);
+            p.lock().state = ProcessState::Running;
 
-        let p = match PROC_TABLE.lock().get_runnable() {
-            Some(p) => p.as_ptr(),
-            _ => continue,
-        };
-        cli(|| {
-            my_cpu().current_proc = p;
-        });
-        vm::uvm::switch(p);
-        unsafe { (*p).state = ProcessState::Running };
+            // switching
+            let sched_ctx = cli(|| &mut my_cpu().scheduler as *mut _);
+            unsafe { switch(sched_ctx, p.lock().context) };
 
-        // switching
-        let sched_ctx = cli(|| &mut my_cpu().scheduler as *mut _);
-        unsafe { switch(sched_ctx, (*p).context) };
-
-        vm::switch_kvm();
+            vm::switch_kvm();
+        }
     }
 }
 

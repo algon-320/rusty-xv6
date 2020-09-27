@@ -7,8 +7,8 @@ pub mod bcache {
     use crate::lock::spin::SpinMutex;
     use alloc::collections::BTreeMap;
     use alloc::sync::{Arc, Weak};
-    use core::mem::MaybeUninit;
     use core::sync::atomic::{AtomicU8, Ordering};
+    use lazy_static::lazy_static;
 
     /// buffer has been read from disk
     const B_VALID: u8 = 0x2;
@@ -55,23 +55,17 @@ pub mod bcache {
     }
 
     struct Bcache {
-        cache: MaybeUninit<BTreeMap<(u32, u32), Weak<Buf>>>,
+        cache: BTreeMap<(u32, u32), Weak<Buf>>,
     }
     impl Bcache {
-        pub const fn empty() -> Self {
+        pub fn empty() -> Self {
             Self {
-                cache: MaybeUninit::uninit(),
+                cache: BTreeMap::new(),
             }
-        }
-        /// Initialize the buffer cache.
-        /// Safety: it must be called once before using the cache.
-        pub unsafe fn init(&mut self) {
-            self.cache.as_mut_ptr().write(BTreeMap::new());
         }
         fn get(&mut self, dev: u32, block_no: u32) -> Arc<Buf> {
             let key = (dev, block_no);
-            let cache = unsafe { &mut *self.cache.as_mut_ptr() };
-            match cache.get(&key).and_then(|weak| weak.upgrade()) {
+            match self.cache.get(&key).and_then(|weak| weak.upgrade()) {
                 Some(arc) => arc,
                 None => {
                     let mut buf = Arc::new(Buf::zero());
@@ -82,11 +76,15 @@ pub mod bcache {
                         buf.flags = AtomicU8::new(0);
                     }
                     let weak = Arc::downgrade(&buf);
-                    cache.insert(key, weak);
+                    self.cache.insert(key, weak);
                     buf
                 }
             }
         }
+    }
+
+    lazy_static! {
+        static ref BCACHE: SpinMutex<Bcache> = SpinMutex::new("bcache", Bcache::empty());
     }
 
     pub fn read(dev: u32, block_no: u32) -> Arc<Buf> {
@@ -103,11 +101,8 @@ pub mod bcache {
         }
     }
 
-    static BCACHE: SpinMutex<Bcache> = SpinMutex::new("bcache", Bcache::empty());
-
     pub fn init() {
-        let mut bcache = BCACHE.lock();
-        unsafe { bcache.init() };
+        lazy_static::initialize(&BCACHE);
     }
 }
 
@@ -169,7 +164,7 @@ pub mod inode {
     use crate::proc::my_proc;
     use alloc::collections::BTreeMap;
     use alloc::sync::{Arc, Weak};
-    use core::mem::MaybeUninit;
+    use lazy_static::lazy_static;
 
     const ROOT_DEV: u32 = 1;
     const ROOT_INO: u32 = 1;
@@ -285,23 +280,17 @@ pub mod inode {
     }
 
     pub struct Icache {
-        cache: MaybeUninit<BTreeMap<(u32, u32), Weak<Inode>>>,
+        cache: BTreeMap<(u32, u32), Weak<Inode>>,
     }
     impl Icache {
-        pub const fn empty() -> Self {
+        pub fn empty() -> Self {
             Self {
-                cache: MaybeUninit::uninit(),
+                cache: BTreeMap::new(),
             }
-        }
-        /// Initialize the inode cache.
-        /// Safety: it must be called once before using the cache.
-        pub unsafe fn init(&mut self) {
-            self.cache.as_mut_ptr().write(BTreeMap::new())
         }
         pub fn get(&mut self, dev: u32, inum: u32) -> Arc<Inode> {
             let key = (dev, inum);
-            let cache = unsafe { &mut *self.cache.as_mut_ptr() };
-            match cache.get(&key).and_then(|weak| weak.upgrade()) {
+            match self.cache.get(&key).and_then(|weak| weak.upgrade()) {
                 Some(arc) => arc,
                 None => {
                     let mut inode = Arc::new(Inode::zero());
@@ -311,19 +300,19 @@ pub mod inode {
                         inode.inum = inum;
                     }
                     let weak = Arc::downgrade(&inode);
-                    cache.insert(key, weak);
+                    self.cache.insert(key, weak);
                     inode
                 }
             }
         }
     }
 
-    /// maximum number of active i-nodes
-    const N_INODE: usize = 50;
-    static ICACHE: SpinMutex<Icache> = SpinMutex::new("icache", Icache::empty());
+    lazy_static! {
+        static ref ICACHE: SpinMutex<Icache> = SpinMutex::new("icache", Icache::empty());
+    }
 
     pub fn init() {
-        unsafe { ICACHE.lock().init() };
+        lazy_static::initialize(&ICACHE);
     }
 
     #[derive(Debug, Eq, PartialEq)]
@@ -407,9 +396,10 @@ pub mod inode {
     fn name_x(path: &str, name_iparent: bool) -> Option<Arc<Inode>> {
         let mut ip = match path {
             "/" => ICACHE.lock().get(ROOT_DEV, ROOT_INO),
-            _ =>
-            // start traverse from the current working directory
-            unsafe { (*my_proc()).cwd.as_ref().unwrap().clone() }
+            _ => {
+                // start traverse from the current working directory
+                my_proc().lock().cwd.as_ref().unwrap().clone()
+            }
         };
 
         let mut path = path.as_bytes();

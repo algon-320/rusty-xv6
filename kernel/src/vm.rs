@@ -195,7 +195,7 @@ pub mod uvm {
     use super::*;
     use crate::lock::cli;
     use crate::memory::{seg, v2p, KSTACKSIZE};
-    use crate::proc::{my_cpu, Process, TaskState};
+    use crate::proc::{my_cpu, ProcessRef, TaskState};
     use core::mem::size_of;
     use utils::x86;
 
@@ -216,9 +216,9 @@ pub mod uvm {
     }
 
     /// Switch TSS and h/w page table to correspond to process p.
-    pub fn switch(p: *mut Process) {
-        assert!(!p.is_null(), "switch_uvm: no process");
-        assert!(unsafe { (*p).is_valid() }, "switch_uvm: no process");
+    pub fn switch(p: &ProcessRef) {
+        let p = p.lock();
+        assert!(p.is_valid(), "switch_uvm: no process");
 
         cli(|| unsafe {
             let mut cpu = my_cpu();
@@ -229,12 +229,12 @@ pub mod uvm {
                 0,
             );
             cpu.task_state.ss0 = (seg::SEG_KDATA as u16) << 3;
-            cpu.task_state.esp0 = (*p).kernel_stack.add(KSTACKSIZE) as u32;
+            cpu.task_state.esp0 = p.kernel_stack.add(KSTACKSIZE) as u32;
             // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
             // forbids I/O instructions (e.g., inb and outb) from user space
             cpu.task_state.iomb = 0xFFFF;
             x86::ltr((seg::SEG_TSS as u16) << 3);
-            x86::lcr3(v2p(VAddr::from((*p).pg_dir)).raw() as u32);
+            x86::lcr3(v2p(VAddr::from(p.pg_dir)).raw() as u32);
         });
     }
 
