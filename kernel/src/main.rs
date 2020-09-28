@@ -185,7 +185,8 @@ global_asm! {r#"
 .set CR0_PG,        0x80000000  # Paging
 .set CR4_PSE,       0x00000010  # Page size extension
 
-.set STACK_SIZE,    4096 * 2    # Additional space for logging
+.set PAGE_SIZE,     4096
+.set STACK_SIZE,    PAGE_SIZE * 2  # Additional space for logging
 
 .p2align 2
 .text
@@ -218,7 +219,7 @@ entry:
     mov     $main, %eax
     jmp     *%eax
 
-.comm stack, STACK_SIZE
+.comm stack, STACK_SIZE, PAGE_SIZE
 "#}
 
 global_asm! {r#"
