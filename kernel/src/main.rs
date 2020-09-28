@@ -10,6 +10,7 @@
 #![feature(ptr_internals)]
 #![feature(custom_test_frameworks)]
 #![feature(alloc_error_handler)]
+#![feature(new_uninit)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]

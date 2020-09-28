@@ -3,6 +3,7 @@ use super::lock::spin::SpinMutex;
 use super::memory::{pg_dir, seg, PAGE_SIZE};
 use super::trap;
 use super::vm;
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
@@ -245,7 +246,7 @@ enum ProcessState {
 pub struct Process {
     state: ProcessState,                    // Process state
     pub size: usize,                        // Size of process memory (bytes)
-    pub pg_dir: *mut pg_dir::PageDirectory, // Page table
+    pub pg_dir: Box<pg_dir::PageDirectory>, // Page table
     pub kernel_stack: *mut u8,              // Bottom of kernel stack for this process
     pub pid: u32,                           // Process ID
     pub trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
@@ -255,11 +256,11 @@ pub struct Process {
     pub name: [u8; 16], // Process name (debugging)
 }
 impl Process {
-    pub const fn zero() -> Self {
+    pub fn new() -> Self {
         Self {
             state: ProcessState::Unused,
             size: 0,
-            pg_dir: core::ptr::null_mut(),
+            pg_dir: pg_dir::PageDirectory::zero_boxed(),
             kernel_stack: core::ptr::null_mut(),
             pid: u32::MAX,
             trap_frame: core::ptr::null_mut(),
@@ -270,7 +271,7 @@ impl Process {
         }
     }
     pub fn is_valid(&self) -> bool {
-        !self.pg_dir.is_null() && !self.kernel_stack.is_null()
+        !self.kernel_stack.is_null()
     }
 }
 impl core::fmt::Debug for Process {
@@ -325,7 +326,7 @@ impl ProcessTable {
 
     /// Create new process.
     pub fn alloc_proc(&mut self) -> ProcessRef {
-        let mut p = Process::zero();
+        let mut p = Process::new();
         p.state = ProcessState::Embryo;
         p.pid = self.take_next_pid();
 
@@ -367,8 +368,8 @@ impl ProcessTable {
         let p = self.alloc_proc();
         {
             let mut p = p.lock();
-            p.pg_dir = vm::setup_kvm().expect("user_init: out of memory").as_ptr();
-            vm::uvm::init(unsafe { &mut *p.pg_dir }, INIT_CODE);
+            p.pg_dir = vm::setup_kvm().expect("user_init: out of memory");
+            vm::uvm::init(&mut p.pg_dir, INIT_CODE);
             p.size = PAGE_SIZE;
             {
                 let tf = unsafe { &mut *p.trap_frame };

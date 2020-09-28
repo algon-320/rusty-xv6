@@ -4,6 +4,7 @@
 ///     Intel@ 64 and IA-32 Architectures Software Developer's Manual,
 ///     Vol.3: System Programming Guide - 4.3 (32-bit Paging)
 pub mod pg_dir {
+    use alloc::boxed::Box;
     use utils::address::{PAddr, VAddr};
 
     /// # directory entries per page directory
@@ -13,6 +14,11 @@ pub mod pg_dir {
 
     #[repr(C, align(4096))]
     pub struct PageDirectory(pub [PageDirEntry; NPDENTRIES]);
+    impl PageDirectory {
+        pub fn zero_boxed() -> Box<Self> {
+            unsafe { Box::new_zeroed().assume_init() }
+        }
+    }
     impl core::ops::Deref for PageDirectory {
         type Target = [PageDirEntry; NPDENTRIES];
         fn deref(&self) -> &Self::Target {
@@ -24,7 +30,24 @@ pub mod pg_dir {
             &mut self.0
         }
     }
-    pub type PageTable = [PageTableEntry; NPTENTRIES];
+    #[repr(C, align(4096))]
+    pub struct PageTable(pub [PageTableEntry; NPTENTRIES]);
+    impl PageTable {
+        pub fn zero_boxed() -> Box<Self> {
+            unsafe { Box::new_zeroed().assume_init() }
+        }
+    }
+    impl core::ops::Deref for PageTable {
+        type Target = [PageTableEntry; NPTENTRIES];
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl core::ops::DerefMut for PageTable {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
 
     #[derive(Clone, Copy)]
     #[repr(transparent)]
