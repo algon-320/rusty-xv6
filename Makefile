@@ -1,4 +1,4 @@
-PROFILE := release
+PROFILE := debug
 CARGO_FLAGS := $(if $(findstring release,$(PROFILE)),--release,)
 
 IMAGE := out/xv6.img

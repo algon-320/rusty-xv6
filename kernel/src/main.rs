@@ -7,21 +7,22 @@
 #![feature(const_fn)]
 #![feature(const_raw_ptr_to_usize_cast)]
 #![feature(const_in_array_repeat_expressions)]
-#![feature(ptr_offset_from)]
 #![feature(ptr_internals)]
 #![feature(custom_test_frameworks)]
+#![feature(alloc_error_handler)]
+#![feature(new_uninit)]
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![allow(clippy::identity_op)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+extern crate alloc;
 extern crate rlibc;
 
 #[macro_use]
 mod console;
 mod fs;
-mod ide;
 mod ioapic;
 mod kalloc;
 mod lapic;
@@ -98,9 +99,7 @@ pub extern "C" fn main() -> ! {
     uart::puts("xv6...\n"); // Announce that we're here.
     proc::init(); // process table
     trap::init(); // trap vectors
-    fs::init(); // buffer cache, inode cache
-    ide::init(); // disk
-
+    fs::init(); // ide, buffer cache, inode cache
     start_others(); // start other processors
 
     // must come after start_others()
@@ -141,7 +140,7 @@ fn start_others() {
             continue;
         }
 
-        let stack = kalloc::kalloc().unwrap() as *mut c_void;
+        let stack = kalloc::kalloc().unwrap().as_ptr() as *mut c_void;
         let code = p2v(PAddr::<*mut c_void>::from_raw(0x7000));
         unsafe {
             let code = code.mut_ptr();
@@ -185,7 +184,8 @@ global_asm! {r#"
 .set CR0_PG,        0x80000000  # Paging
 .set CR4_PSE,       0x00000010  # Page size extension
 
-.set STACK_SIZE,    4096 * 2    # Additional space for logging
+.set PAGE_SIZE,     4096
+.set STACK_SIZE,    PAGE_SIZE * 2  # Additional space for logging
 
 .p2align 2
 .text
@@ -218,7 +218,7 @@ entry:
     mov     $main, %eax
     jmp     *%eax
 
-.comm stack, STACK_SIZE
+.comm stack, STACK_SIZE, PAGE_SIZE
 "#}
 
 global_asm! {r#"

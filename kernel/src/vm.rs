@@ -1,9 +1,10 @@
-use super::kalloc;
 use super::memory::pg_dir::{
     self, ent_flag, PageDirEntry, PageDirectory, PageTable, PageTableEntry,
 };
 use super::memory::{p2v, v2p, Page};
 use super::memory::{DEVSPACE, EXTMEM, KERNBASE, KERNLINK, PAGE_SIZE, PHYSTOP};
+use alloc::boxed::Box;
+use lazy_static::lazy_static;
 use utils::prelude::*;
 use utils::x86;
 
@@ -52,11 +53,9 @@ fn walk_page_dir(
         if !alloc {
             return None;
         }
-        let pg_tab = kalloc::kalloc()? as *mut PageTable;
-        let pg_tab = VAddr::from(pg_tab);
-
-        // Make sure all those PTE_P bits are zero.
-        unsafe { rlibc::memset(pg_tab.cast().mut_ptr(), 0, PAGE_SIZE) };
+        let pg_tab = PageTable::zero_boxed();
+        // this leak will be retrieved in 'free_vm' and deallocated.
+        let pg_tab = VAddr::from(Box::into_raw(pg_tab));
 
         // The permissions here are overly generous, but they can
         // be further restricted by the permissions in
@@ -99,7 +98,7 @@ fn map_pages(
 }
 
 /// Set up kernel part of a page table.
-pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
+pub fn setup_kvm() -> Option<Box<PageDirectory>> {
     let data_vaddr = {
         extern "C" {
             static data: u8;
@@ -138,62 +137,65 @@ pub fn setup_kvm<'kmem>() -> Option<&'kmem mut PageDirectory> {
         },
     ];
 
-    let pg_dir = kalloc::kalloc()? as *mut PageDirectory;
-    unsafe { rlibc::memset(pg_dir as *mut u8, 0, PAGE_SIZE) };
+    let mut pg_dir = PageDirectory::zero_boxed();
     if p2v(PHYSTOP) > DEVSPACE {
         panic!("PHYSTOP too high");
     }
-    let pg_dir = unsafe { &mut *pg_dir };
-    for k in &kmap {
-        if map_pages(
-            pg_dir,
-            k.virt.cast(),
-            k.end.raw().wrapping_sub(k.start.raw()),
-            k.start,
-            k.perm,
-        )
-        .is_none()
-        {
-            println!(super::console::print_color::LIGHT_RED; "map_pages fail");
-            free_vm(pg_dir);
-            return None;
+    {
+        for k in &kmap {
+            if map_pages(
+                &mut pg_dir,
+                k.virt.cast(),
+                k.end.raw().wrapping_sub(k.start.raw()),
+                k.start,
+                k.perm,
+            )
+            .is_none()
+            {
+                println!(super::console::print_color::LIGHT_RED; "map_pages fail");
+                free_vm(pg_dir);
+                return None;
+            }
         }
     }
     Some(pg_dir)
 }
 
-static mut KPG_DIR: *mut PageDirectory = core::ptr::null_mut();
+lazy_static! {
+    static ref KPG_DIR: &'static PageDirectory = Box::leak(setup_kvm().expect("kvmalloc failed"));
+}
+
 /// Allocate one page table for the machine for the kernel address
 /// space for scheduler processes.
 pub fn kvmalloc() {
-    unsafe { KPG_DIR = setup_kvm().expect("kvmalloc failed") };
+    lazy_static::initialize(&KPG_DIR);
+
     // Now, we switch the page table from entry_page_dir to kpg_dir
     switch_kvm();
 }
 
 pub fn switch_kvm() {
-    let kpg_dir = unsafe { VAddr::from(KPG_DIR) };
-    x86::lcr3(v2p(kpg_dir).raw() as u32);
+    x86::lcr3(v2p(VAddr::from(*KPG_DIR)).raw() as u32);
 }
 
 /// Free a page table and all the physical memory pages in the user part.
-fn free_vm(pg_dir: &mut PageDirectory) {
-    uvm::dealloc(pg_dir, KERNBASE.raw(), 0);
+fn free_vm(mut pg_dir: Box<PageDirectory>) {
+    uvm::dealloc(&mut pg_dir, KERNBASE.raw(), 0);
     for ent in pg_dir
         .iter()
         .filter(|ent| ent.flags_check(ent_flag::PRESENT))
     {
         let v = p2v(ent.addr()).cast::<Page>();
-        kalloc::kfree(v.mut_ptr());
+        let t = unsafe { Box::from_raw(v.mut_ptr()) };
+        drop(t);
     }
-    kalloc::kfree(pg_dir as *mut _ as *mut Page);
 }
 
 pub mod uvm {
     use super::*;
     use crate::lock::cli;
     use crate::memory::{seg, v2p, KSTACKSIZE};
-    use crate::proc::{my_cpu, Process, TaskState};
+    use crate::proc::{my_cpu, ProcessRef, TaskState};
     use core::mem::size_of;
     use utils::x86;
 
@@ -201,7 +203,7 @@ pub mod uvm {
     /// the size of init_code must be less than a page.
     pub fn init(pg_dir: &mut pg_dir::PageDirectory, init_code: &[u8]) {
         assert!(init_code.len() < PAGE_SIZE);
-        let mem = crate::kalloc::kalloc().unwrap() as *mut u8;
+        let mem = crate::kalloc::kalloc().unwrap().as_ptr() as *mut u8;
         unsafe { rlibc::memset(mem, 0, PAGE_SIZE) };
         map_pages(
             pg_dir,
@@ -214,9 +216,9 @@ pub mod uvm {
     }
 
     /// Switch TSS and h/w page table to correspond to process p.
-    pub fn switch(p: *mut Process) {
-        assert!(!p.is_null(), "switch_uvm: no process");
-        assert!(unsafe { (*p).is_valid() }, "switch_uvm: no process");
+    pub fn switch(p: &ProcessRef) {
+        let p = p.lock();
+        assert!(p.is_valid(), "switch_uvm: no process");
 
         cli(|| unsafe {
             let mut cpu = my_cpu();
@@ -227,12 +229,12 @@ pub mod uvm {
                 0,
             );
             cpu.task_state.ss0 = (seg::SEG_KDATA as u16) << 3;
-            cpu.task_state.esp0 = (*p).kernel_stack.add(KSTACKSIZE) as u32;
+            cpu.task_state.esp0 = p.kernel_stack.add(KSTACKSIZE) as u32;
             // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
             // forbids I/O instructions (e.g., inb and outb) from user space
             cpu.task_state.iomb = 0xFFFF;
             x86::ltr((seg::SEG_TSS as u16) << 3);
-            x86::lcr3(v2p(VAddr::from((*p).pg_dir)).raw() as u32);
+            x86::lcr3(v2p(VAddr::from(p.pg_dir.as_ref())).raw() as u32);
         });
     }
 

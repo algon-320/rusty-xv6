@@ -1,10 +1,6 @@
 name: Test on QEMU
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+on: [push, pull_request]
 
 jobs:
   make_test:

@@ -6,6 +6,13 @@ use core::mem::size_of;
 use utils::prelude::*;
 use utils::x86;
 
+/// sum up given bytes
+unsafe fn sum(p: *const u8, len: usize) -> u8 {
+    core::slice::from_raw_parts(p, len)
+        .iter()
+        .fold(0, |acc, x| acc.wrapping_add(*x))
+}
+
 /// MP Floating Pointer Structure
 #[repr(C)]
 struct Mp {
@@ -28,19 +35,21 @@ impl Mp {
     /// Check whether the following conditions meet:
     /// 1. Is the signature "_MP_" ?
     /// 2. Is the check sum 0?
-    pub fn verify(&self) -> bool {
-        let p = self as *const _ as *const u8;
-        self.signature == *b"_MP_" && unsafe { sum(p, size_of::<Mp>()) } == 0
-    }
-    pub fn get_conf(&self) -> Option<&MpConf> {
-        if self.conf_addr.is_null() {
-            return None;
-        }
-        let conf = unsafe { &*p2v(self.conf_addr).ptr() };
-        if conf.verify() {
-            Some(conf)
+    pub fn verify(&self) -> Option<&Self> {
+        if self.signature == *b"_MP_"
+            && unsafe { sum(self as *const _ as *const u8, size_of::<Mp>()) } == 0
+        {
+            Some(self)
         } else {
             None
+        }
+    }
+    pub fn get_conf(&self) -> Option<&'static MpConf> {
+        if self.conf_addr.is_null() {
+            None
+        } else {
+            let conf = unsafe { &*p2v(self.conf_addr).ptr() };
+            conf.verify()
         }
     }
 }
@@ -73,9 +82,14 @@ struct MpConf {
     _reserved: u8,
 }
 impl MpConf {
-    pub fn verify(&self) -> bool {
-        let p = self as *const _ as *const u8;
-        self.signature == *b"PCMP" && unsafe { sum(p, self.length as usize) } == 0
+    pub fn verify(&self) -> Option<&Self> {
+        if self.signature == *b"PCMP"
+            && unsafe { sum(self as *const _ as *const u8, self.length as usize) } == 0
+        {
+            Some(self)
+        } else {
+            None
+        }
     }
 }
 
@@ -125,26 +139,19 @@ struct MpIoApic {
     addr: *mut u32,
 }
 
-/// sum up given bytes
-unsafe fn sum(p: *const u8, len: usize) -> u8 {
-    core::slice::from_raw_parts(p, len)
-        .iter()
-        .fold(0, |acc, x| acc.wrapping_add(*x))
-}
-
 /// Search for the MP Floating Pointer Structure, which according to the
 /// spec is in one of the following three locations:
 /// 1) in the first KB of the EBDA;
 /// 2) in the last KB of system base memory;
 /// 3) in the BIOS ROM between 0xE0000 and 0xFFFFF.
-fn search() -> Option<*const Mp> {
+fn search() -> Option<&'static Mp> {
     /// Look for an MP structure in the len bytes at addr.
-    unsafe fn search1(addr: PAddr<u8>, len: usize) -> Option<*const Mp> {
+    fn search1(addr: PAddr<u8>, len: usize) -> Option<&'static Mp> {
         let mut addr = p2v(addr);
         let end = addr + len;
         while addr < end {
-            let mp = addr.cast::<Mp>().ptr();
-            if (*mp).verify() {
+            let mp = unsafe { &*addr.cast::<Mp>().ptr() };
+            if let Some(mp) = mp.verify() {
                 return Some(mp);
             }
             addr += size_of::<Mp>();
@@ -172,9 +179,9 @@ fn search() -> Option<*const Mp> {
 /// Check for correct signature, calculate the checksum and,
 /// if correct, check the version.
 /// TODO: check extended table checksum.
-fn config() -> Option<(*const Mp, *const MpConf)> {
+fn config() -> Option<(&'static Mp, &'static MpConf)> {
     let mp = search()?;
-    let conf = unsafe { (*mp).get_conf()? };
+    let conf = mp.get_conf()?;
     match conf.version {
         1 | 4 => Some((mp, conf)),
         _ => None,
@@ -183,10 +190,11 @@ fn config() -> Option<(*const Mp, *const MpConf)> {
 
 pub fn init() {
     let (mp, conf) = config().expect("Expect to run on an SMP");
+    let conf_begin = conf as *const MpConf as *const u8;
 
     let mut is_mp = true;
-    let mut p = unsafe { conf.add(1) as *const u8 };
-    let e = unsafe { (conf as *const u8).add((*conf).length as usize) };
+    let mut p = unsafe { conf_begin.add(size_of::<MpConf>()) };
+    let e = unsafe { conf_begin.add(conf.length as usize) };
     while p < e {
         let ty = unsafe { *p };
         let sz = match ty {
@@ -217,9 +225,9 @@ pub fn init() {
         panic!("Didn't find a suitable machine");
     }
 
-    unsafe { super::lapic::LAPIC = Some((*conf).lapic_addr) };
+    unsafe { super::lapic::LAPIC = Some(conf.lapic_addr) };
 
-    if unsafe { (*mp).imcr } != 0 {
+    if mp.imcr != 0 {
         // Bochs doesn't support IMCR, so this doesn't run on Bochs.
         // But it would on real hardware.
         x86::outb(0x22, 0x70); // Select IMCR
