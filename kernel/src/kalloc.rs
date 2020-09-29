@@ -1,6 +1,6 @@
 use super::lock::spin::SpinMutex;
 use super::memory::{Page, PAGE_SIZE};
-use alloc::alloc::{alloc, dealloc, GlobalAlloc, Layout};
+use alloc::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
 use utils::prelude::*;
 
@@ -60,7 +60,7 @@ pub fn init2(start: VAddr<u8>, end: VAddr<u8>) {
 /// which normally should have been returned by a call to kalloc().
 pub fn kfree(page: NonNull<Page>) {
     let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-    unsafe { dealloc(page.as_ptr() as *mut u8, layout) };
+    unsafe { HEAP.dealloc(page.as_ptr() as *mut u8, layout) };
 }
 
 /// Allocate one 4096-byte page of physical memory.
@@ -68,6 +68,6 @@ pub fn kfree(page: NonNull<Page>) {
 /// Returns None if the memory cannot be allocated.
 pub fn kalloc() -> Option<NonNull<Page>> {
     let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-    let page = unsafe { alloc(layout) };
+    let page = unsafe { HEAP.alloc(layout) };
     NonNull::new(page as *mut Page)
 }
