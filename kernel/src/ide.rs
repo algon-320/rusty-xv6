@@ -9,10 +9,39 @@ use utils::x86;
 
 use fs::bcache::BufRef;
 lazy_static! {
-    static ref IDE_QUEUE: SpinMutex<VecDeque<BufRef>> = SpinMutex::new("IDE_QUE", VecDeque::new());
+    static ref IDE_QUEUE: SpinMutex<IdeQueue> = SpinMutex::new("IDE_QUE", IdeQueue::new());
+}
+
+struct IdeQueue {
+    que: VecDeque<BufRef>,
+    running: bool,
+}
+impl IdeQueue {
+    pub fn new() -> Self {
+        Self {
+            que: VecDeque::new(),
+            running: false,
+        }
+    }
+    fn start(&mut self) {
+        todo!()
+    }
+    pub fn append(&mut self, b: BufRef) {
+        self.que.push_back(b);
+        // Start disk if necessary.
+        if self.que.len() == 1 {
+            self.start();
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.que.is_empty()
+    }
 }
 
 static mut HAVE_DISK1: bool = false;
+fn have_disk1() -> bool {
+    unsafe { HAVE_DISK1 }
+}
 
 const IDE_BSY: u8 = 0x80;
 const IDE_DRDY: u8 = 0x40;
@@ -49,54 +78,41 @@ pub fn init() {
             break;
         }
     }
-    unsafe { dbg!(HAVE_DISK1) };
+    dbg!(have_disk1());
 
     // Switch back to disk 0
     x86::outb(PORT_BASE + 6, 0xE0 | (0 << 4));
 }
 
 pub fn read_from_disk(b: &BufRef) {
-    todo!()
-    // if b.valid() {
-    //     panic!("read_from_disk: nothing to do");
-    // }
-    // if b.dev != 0 && unsafe { !HAVE_DISK1 } {
-    //     panic!("read_from_disk: ide disk 1 not present");
-    // }
+    if b.valid() {
+        panic!("read_from_disk: nothing to do");
+    }
+    if b.dev != 0 && !have_disk1() {
+        panic!("read_from_disk: ide disk 1 not present");
+    }
 
-    // let mut ide_que = IDE_QUEUE.lock();
-    // ide_que.append(b);
+    IDE_QUEUE.lock().append(b.clone());
 
-    // // Start disk if necessary.
-    // if ide_que.next == b as *const _ {
-    //     ide_que.start();
-    // }
-    // // Wait for read request to finish.
-    // while !b.valid() {
-    //     todo!(); // sleep
-    // }
+    // Wait for read request to finish.
+    while !b.valid() {
+        todo!(); // sleep
+    }
 }
 pub fn write_to_disk(b: &BufRef) {
-    todo!()
-    // if !b.dirty() {
-    //     panic!("read_from_disk: nothing to do");
-    // }
-    // if b.dev != 0 && unsafe { !HAVE_DISK1 } {
-    //     panic!("read_from_disk: ide disk 1 not present");
-    // }
+    if !b.dirty() {
+        panic!("read_from_disk: nothing to do");
+    }
+    if b.dev != 0 && !have_disk1() {
+        panic!("read_from_disk: ide disk 1 not present");
+    }
 
-    // let mut ide_que = IDE_QUEUE.lock();
-    // ide_que.append(b);
+    IDE_QUEUE.lock().append(b.clone());
 
-    // // Start disk if necessary.
-    // if ide_que.next == b as *const _ {
-    //     ide_que.start();
-    // }
-    // // Wait for write request to finish.
-    // while b.dirty() {
-    //     todo!(); // sleep
-    // }
-    // todo!()
+    // Wait for write request to finish.
+    while b.dirty() {
+        todo!(); // sleep
+    }
 }
 
 #[no_mangle]
