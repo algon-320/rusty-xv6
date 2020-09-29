@@ -17,10 +17,7 @@ pub struct Buf {
     pub dev: u32,
     pub block_no: u32,
     flags: AtomicU8,
-    pub body: SleepMutex<BufBody>,
-}
-pub struct BufBody {
-    pub data: [u8; BLK_SIZE],
+    pub data: SleepMutex<[u8; BLK_SIZE]>,
 }
 impl Buf {
     pub const fn zero() -> Self {
@@ -28,12 +25,7 @@ impl Buf {
             dev: 0,
             block_no: 0,
             flags: AtomicU8::new(0),
-            body: SleepMutex::new(
-                "buf",
-                BufBody {
-                    data: [0; BLK_SIZE],
-                },
-            ),
+            data: SleepMutex::new("buf", [0; BLK_SIZE]),
         }
     }
     pub fn dirty(&self) -> bool {
