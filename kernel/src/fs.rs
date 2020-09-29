@@ -15,6 +15,7 @@ pub mod bcache {
     /// buffer needs to be written to disk
     const B_DIRTY: u8 = 0x4;
 
+    pub type BufRef = Arc<Buf>;
     pub struct Buf {
         pub dev: u32,
         pub block_no: u32,
@@ -63,7 +64,7 @@ pub mod bcache {
                 cache: BTreeMap::new(),
             }
         }
-        fn get(&mut self, dev: u32, block_no: u32) -> Arc<Buf> {
+        fn get(&mut self, dev: u32, block_no: u32) -> BufRef {
             let key = (dev, block_no);
             match self.cache.get(&key).and_then(|weak| weak.upgrade()) {
                 Some(arc) => arc,
@@ -87,7 +88,7 @@ pub mod bcache {
         static ref BCACHE: SpinMutex<Bcache> = SpinMutex::new("bcache", Bcache::empty());
     }
 
-    pub fn read(dev: u32, block_no: u32) -> Arc<Buf> {
+    pub fn read(dev: u32, block_no: u32) -> BufRef {
         let mut bcache = BCACHE.lock();
         let b = bcache.get(dev, block_no);
         if !b.valid() {
@@ -95,7 +96,7 @@ pub mod bcache {
         }
         b
     }
-    pub fn write(buf: &Buf) {
+    pub fn write(buf: &BufRef) {
         if buf.dirty() {
             ide::write_to_disk(&buf);
         }
@@ -168,6 +169,8 @@ pub mod inode {
 
     const ROOT_DEV: u32 = 1;
     const ROOT_INO: u32 = 1;
+
+    pub type InodeRef = Arc<Inode>;
 
     /// in-memory copy of an inode
     pub struct Inode {
@@ -288,7 +291,7 @@ pub mod inode {
                 cache: BTreeMap::new(),
             }
         }
-        pub fn get(&mut self, dev: u32, inum: u32) -> Arc<Inode> {
+        pub fn get(&mut self, dev: u32, inum: u32) -> InodeRef {
             let key = (dev, inum);
             match self.cache.get(&key).and_then(|weak| weak.upgrade()) {
                 Some(arc) => arc,
@@ -332,7 +335,7 @@ pub mod inode {
         size: usize,     // Size of file in bytes
     }
 
-    fn dir_lookup(dev: u32, dir: &InodeBody, name: &[u8]) -> Option<(Arc<Inode>, usize)> {
+    fn dir_lookup(dev: u32, dir: &InodeBody, name: &[u8]) -> Option<(InodeRef, usize)> {
         if dir.type_ != FileType::Directory {
             panic!("not directory");
         }
@@ -393,7 +396,7 @@ pub mod inode {
         Some((first_elem, skip_leading_slash(path)))
     }
 
-    fn name_x(path: &str, name_iparent: bool) -> Option<Arc<Inode>> {
+    fn name_x(path: &str, name_iparent: bool) -> Option<InodeRef> {
         let mut ip = match path {
             "/" => ICACHE.lock().get(ROOT_DEV, ROOT_INO),
             _ => {
@@ -427,7 +430,7 @@ pub mod inode {
             Some(ip)
         }
     }
-    pub fn from_name(path: &str) -> Option<Arc<Inode>> {
+    pub fn from_name(path: &str) -> Option<InodeRef> {
         name_x(path, false)
     }
 

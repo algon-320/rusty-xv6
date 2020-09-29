@@ -251,7 +251,7 @@ pub struct Process {
     pub pid: u32,                           // Process ID
     pub trap_frame: *mut trap::TrapFrame,   // Trap frame for current syscall
     pub context: *mut Context,              // swtch() here to run process
-    pub cwd: Option<Arc<inode::Inode>>,     // Current directory
+    pub cwd: Option<inode::InodeRef>,       // Current directory
 
     pub name: [u8; 16], // Process name (debugging)
 }

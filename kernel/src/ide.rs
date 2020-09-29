@@ -3,51 +3,15 @@ use super::ioapic;
 use super::lock::spin::SpinMutex;
 use super::proc;
 use super::trap;
+use alloc::collections::VecDeque;
+use lazy_static::lazy_static;
 use utils::x86;
 
-use fs::bcache::Buf;
-struct IdeQueue {
-    next: *const Buf,
-}
-unsafe impl Send for IdeQueue {}
-
-impl IdeQueue {
-    pub const fn new() -> Self {
-        Self {
-            next: core::ptr::null(),
-        }
-    }
-    pub fn is_empty(&self) -> bool {
-        self.next.is_null()
-    }
-    pub fn start(&mut self) {
-        todo!()
-    }
-    pub fn append(&mut self, buf: *const Buf) {
-        todo!()
-        // unsafe {
-        //     // Find last position and put the buf on it
-        //     let mut pp: *mut *const Buf = &mut self.next as *mut _;
-        //     while !(*pp).is_null() {
-        //         pp = (**pp).ide_que_next.get();
-        //     }
-        //     *pp = buf;
-        // }
-    }
-    pub fn pop(&mut self) -> *const Buf {
-        todo!()
-        // let p = self.next;
-        // if !p.is_null() {
-        //     unsafe {
-        //         self.next = *(*p).ide_que_next.get();
-        //         *(*p).ide_que_next.get() = core::ptr::null();
-        //     }
-        // }
-        // p
-    }
+use fs::bcache::BufRef;
+lazy_static! {
+    static ref IDE_QUEUE: SpinMutex<VecDeque<BufRef>> = SpinMutex::new("IDE_QUE", VecDeque::new());
 }
 
-static IDE_QUEUE: SpinMutex<IdeQueue> = SpinMutex::new("ide", IdeQueue::new());
 static mut HAVE_DISK1: bool = false;
 
 const IDE_BSY: u8 = 0x80;
@@ -91,7 +55,7 @@ pub fn init() {
     x86::outb(PORT_BASE + 6, 0xE0 | (0 << 4));
 }
 
-pub fn read_from_disk(b: &Buf) {
+pub fn read_from_disk(b: &BufRef) {
     todo!()
     // if b.valid() {
     //     panic!("read_from_disk: nothing to do");
@@ -112,7 +76,7 @@ pub fn read_from_disk(b: &Buf) {
     //     todo!(); // sleep
     // }
 }
-pub fn write_to_disk(b: &Buf) {
+pub fn write_to_disk(b: &BufRef) {
     todo!()
     // if !b.dirty() {
     //     panic!("read_from_disk: nothing to do");
