@@ -28,14 +28,26 @@ impl Buf {
             data: SleepMutex::new("buf", [0; BLK_SIZE]),
         }
     }
+    fn set_flags(&self, flags: u8) {
+        self.flags.store(flags, Ordering::SeqCst);
+    }
+    pub fn set_dirty(&self) {
+        self.flags.fetch_or(B_DIRTY, Ordering::SeqCst);
+    }
+    pub fn clear_dirty(&self) {
+        self.flags.fetch_and(!B_DIRTY, Ordering::SeqCst);
+    }
     pub fn dirty(&self) -> bool {
         (self.flags.load(Ordering::SeqCst) & B_DIRTY) != 0
     }
+    pub fn set_valid(&self) {
+        self.flags.fetch_or(B_VALID, Ordering::SeqCst);
+    }
+    pub fn clear_valid(&self) {
+        self.flags.fetch_and(!B_VALID, Ordering::SeqCst);
+    }
     pub fn valid(&self) -> bool {
         (self.flags.load(Ordering::SeqCst) & B_VALID) != 0
-    }
-    pub fn set_flags(&self, flags: u8) {
-        self.flags.store(flags, Ordering::SeqCst);
     }
 }
 impl Drop for Buf {
