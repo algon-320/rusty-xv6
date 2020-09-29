@@ -23,7 +23,6 @@ extern crate rlibc;
 #[macro_use]
 mod console;
 mod fs;
-mod ide;
 mod ioapic;
 mod kalloc;
 mod lapic;
@@ -100,8 +99,7 @@ pub extern "C" fn main() -> ! {
     uart::puts("xv6...\n"); // Announce that we're here.
     proc::init(); // process table
     trap::init(); // trap vectors
-    fs::init(); // buffer cache, inode cache
-    ide::init(); // disk
+    fs::init(); // ide, buffer cache, inode cache
     start_others(); // start other processors
 
     // must come after start_others()
