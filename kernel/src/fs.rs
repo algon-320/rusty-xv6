@@ -59,7 +59,7 @@ pub mod bcache {
         cache: BTreeMap<(u32, u32), Weak<Buf>>,
     }
     impl Bcache {
-        pub fn empty() -> Self {
+        pub fn new() -> Self {
             Self {
                 cache: BTreeMap::new(),
             }
@@ -85,7 +85,7 @@ pub mod bcache {
     }
 
     lazy_static! {
-        static ref BCACHE: SpinMutex<Bcache> = SpinMutex::new("bcache", Bcache::empty());
+        static ref BCACHE: SpinMutex<Bcache> = SpinMutex::new("bcache", Bcache::new());
     }
 
     pub fn read(dev: u32, block_no: u32) -> BufRef {
@@ -286,7 +286,7 @@ pub mod inode {
         cache: BTreeMap<(u32, u32), Weak<Inode>>,
     }
     impl Icache {
-        pub fn empty() -> Self {
+        pub fn new() -> Self {
             Self {
                 cache: BTreeMap::new(),
             }
@@ -311,7 +311,7 @@ pub mod inode {
     }
 
     lazy_static! {
-        static ref ICACHE: SpinMutex<Icache> = SpinMutex::new("icache", Icache::empty());
+        static ref ICACHE: SpinMutex<Icache> = SpinMutex::new("icache", Icache::new());
     }
 
     pub fn init() {

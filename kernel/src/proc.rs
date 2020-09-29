@@ -304,7 +304,7 @@ struct ProcessTable {
     next_pid: u32,
 }
 impl ProcessTable {
-    pub fn empty() -> Self {
+    pub fn new() -> Self {
         Self {
             runnable: Vec::new(),
             init: None,
@@ -394,8 +394,7 @@ impl ProcessTable {
 }
 
 lazy_static! {
-    static ref PROC_TABLE: SpinMutex<ProcessTable> =
-        SpinMutex::new("ptable", ProcessTable::empty());
+    static ref PROC_TABLE: SpinMutex<ProcessTable> = SpinMutex::new("ptable", ProcessTable::new());
 }
 
 pub fn init() {
