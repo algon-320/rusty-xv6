@@ -5,6 +5,7 @@ use crate::lock::spin::SpinMutex;
 use crate::proc;
 use crate::trap;
 use alloc::collections::VecDeque;
+use alloc::sync::Arc;
 use lazy_static::lazy_static;
 use utils::x86;
 
@@ -100,15 +101,15 @@ impl IdeQueue {
         let b = self.que.pop_front().unwrap();
 
         // Read data if needed.
-        if b.dirty() && wait(true).is_some() {
+        if !b.dirty() && wait(true).is_some() {
             let mut data = b.data.lock();
             x86::insl(0x1F0, data.as_mut_ptr() as *mut u32, data.len() / 4);
         }
 
-        // Wake process waitint for this buf.
+        // Wake process waiting for this buf.
         b.set_valid();
         b.clear_dirty();
-        todo!(); // wakeup(b);
+        proc::wakeup(Arc::as_ptr(&b) as usize);
 
         // Start disk on next buf in queue.
         if !self.is_empty() {
@@ -159,11 +160,12 @@ pub fn read_from_disk(b: &BufRef) {
         panic!("read_from_disk: ide disk 1 not present");
     }
 
-    IDE_QUEUE.lock().append(b.clone());
+    let mut ide_que = IDE_QUEUE.lock();
+    ide_que.append(b.clone());
 
     // Wait for read request to finish.
     while !b.valid() {
-        todo!(); // sleep
+        proc::sleep(Arc::as_ptr(b) as usize, &ide_que);
     }
 }
 pub fn write_to_disk(b: &BufRef) {
@@ -174,11 +176,12 @@ pub fn write_to_disk(b: &BufRef) {
         panic!("read_from_disk: ide disk 1 not present");
     }
 
-    IDE_QUEUE.lock().append(b.clone());
+    let mut ide_que = IDE_QUEUE.lock();
+    ide_que.append(b.clone());
 
     // Wait for write request to finish.
     while b.dirty() {
-        todo!(); // sleep
+        proc::sleep(Arc::as_ptr(b) as usize, &ide_que);
     }
 }
 
