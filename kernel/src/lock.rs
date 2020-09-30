@@ -94,6 +94,14 @@ pub mod spin {
     pub struct SpinMutexGuard<'a, T> {
         mtx: &'a SpinMutex<T>,
     }
+    impl<'a, T> SpinMutexGuard<'a, T> {
+        pub unsafe fn force_unlocked(&self) {
+            self.mtx.lock.release()
+        }
+        pub unsafe fn force_locked(&self) {
+            self.mtx.lock.release()
+        }
+    }
     use core::ops::{Deref, DerefMut};
     impl<'a, T> Deref for SpinMutexGuard<'a, T> {
         type Target = T;
@@ -115,10 +123,7 @@ pub mod spin {
 
 pub mod sleep {
     use super::spin::SpinMutex;
-
-    fn sleep() {
-        todo!()
-    }
+    use crate::proc;
 
     pub struct SleepLock {
         locked: SpinMutex<bool>,
@@ -137,27 +142,17 @@ pub mod sleep {
             }
         }
         pub fn acquire(&self) {
-            loop {
-                let to_sleep = {
-                    let mut guard = self.locked.lock();
-                    if *guard {
-                        true
-                    } else {
-                        *guard = true;
-                        false
-                    }
-                };
-                if to_sleep {
-                    sleep();
-                } else {
-                    break;
-                }
+            let mut locked = self.locked.lock();
+            while *locked {
+                proc::sleep(&self as *const _ as usize, &locked);
             }
+            *locked = true;
             // self.pid = todo!();
         }
         pub fn release(&self) {
-            let mut guard = self.locked.lock();
-            *guard = false;
+            let mut locked = self.locked.lock();
+            *locked = false;
+            proc::wakeup(&self as *const _ as usize);
         }
     }
 

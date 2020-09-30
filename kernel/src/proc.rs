@@ -1,9 +1,10 @@
 use super::fs::inode;
-use super::lock::spin::SpinMutex;
+use super::lock::spin::{SpinMutex, SpinMutexGuard};
 use super::memory::{pg_dir, seg, PAGE_SIZE};
 use super::trap;
 use super::vm;
 use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
@@ -299,23 +300,26 @@ unsafe impl Send for Process {}
 pub type ProcessRef = Arc<SpinMutex<Process>>;
 
 struct ProcessTable {
-    runnable: Vec<ProcessRef>,
+    sleeping: BTreeMap<usize, Vec<ProcessRef>>,
+    runnable: VecDeque<ProcessRef>,
     init: Option<ProcessRef>,
     next_pid: u32,
 }
 impl ProcessTable {
     pub fn new() -> Self {
         Self {
-            runnable: Vec::new(),
+            sleeping: BTreeMap::new(),
+            runnable: VecDeque::new(),
             init: None,
             next_pid: 1,
         }
     }
+    /// Put p on the run queue
     pub fn put(&mut self, p: ProcessRef) {
-        self.runnable.push(p);
+        self.runnable.push_back(p);
     }
     pub fn get_runnable(&mut self) -> Option<ProcessRef> {
-        self.runnable.pop()
+        self.runnable.pop_front()
     }
 
     fn take_next_pid(&mut self) -> u32 {
@@ -391,10 +395,59 @@ impl ProcessTable {
         self.init = Some(p.clone());
         self.put(p);
     }
+
+    fn sleep(&mut self, chan: usize, p: &ProcessRef) {
+        if !self.sleeping.contains_key(&chan) {
+            self.sleeping.insert(chan, Vec::new());
+        }
+        self.sleeping.get_mut(&chan).unwrap().push(p.clone());
+    }
+
+    /// Wake up all processes sleeping on chan.
+    fn wakeup(&mut self, chan: usize) {
+        if let Some(sleeping) = self.sleeping.remove(&chan) {
+            for p in sleeping {
+                p.lock().state = ProcessState::Runnable;
+                self.put(p);
+            }
+        }
+    }
 }
 
 lazy_static! {
     static ref PROC_TABLE: SpinMutex<ProcessTable> = SpinMutex::new("ptable", ProcessTable::new());
+}
+
+pub fn sleep<'g, 'lk: 'g, T>(chan: usize, guard: &'g SpinMutexGuard<'lk, T>) {
+    let p = my_proc();
+    PROC_TABLE.lock().sleep(chan, &p);
+    unsafe { guard.force_unlocked() };
+    sched();
+    unsafe { guard.force_locked() };
+}
+
+pub fn wakeup(chan: usize) {
+    PROC_TABLE.lock().wakeup(chan);
+}
+
+/// Enter scheduler.
+fn sched() {
+    let p = my_proc();
+
+    assert!(p.lock().state != ProcessState::Running, "sched: running");
+    assert!(my_cpu().num_cli == 1, "sched: locks");
+    assert!(
+        x86::read_eflags() & x86::eflags::FL_IF == 0,
+        "sched: interruptible"
+    );
+
+    let int_ena = my_cpu().int_enabled;
+    {
+        let sched_ctx = my_cpu().scheduler;
+        let proc_ctx = &mut p.lock().context as *mut *mut Context as *mut *const Context;
+        unsafe { switch(proc_ctx, sched_ctx) };
+    }
+    my_cpu().int_enabled = int_ena;
 }
 
 pub fn init() {
