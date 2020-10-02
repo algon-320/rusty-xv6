@@ -56,11 +56,6 @@ pub static entry_page_dir: PageDirectory = PageDirectory(assigned_array![
     [memory::KERNBASE.raw() >> 22] =
         PageDirEntry::new_large_page(
                 unsafe { PAddr::from_raw_unchecked(0x00000000) },
-                ent_flag::WRITABLE | ent_flag::PRESENT),
-
-    [0xFEC00000 >> 22] =
-        PageDirEntry::new_large_page(
-                unsafe { PAddr::from_raw_unchecked(0xFEC00000) },
                 ent_flag::WRITABLE | ent_flag::PRESENT)
 ]);
 
@@ -73,9 +68,25 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn main() -> ! {
     console::vga::clear_screen();
+    let pre_alloc_lim = PAddr::from_raw(4 * 1024 * 1024);
+    kalloc::init1(
+        VAddr::from_raw(unsafe { &kernel_end } as *const _ as usize),
+        p2v(pre_alloc_lim),
+    );
+    vm::kvmalloc();
+    mp::init();
+    lapic::init();
+    vm::seginit();
+    pic_irq::init();
     ioapic::init();
+    console::init();
     uart::init();
+    proc::init();
+    trap::init();
+    fs::init();
+
     test_main();
+
     x86::outb(0xF4, 0x0); // exit qemu
     loop {}
 }
