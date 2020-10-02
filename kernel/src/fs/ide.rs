@@ -1,11 +1,10 @@
-use super::bcache::BufRef;
+use super::bcache::{Buf, Flags};
 use super::BLK_SIZE;
 use crate::ioapic;
 use crate::lock::spin::SpinMutex;
 use crate::proc;
 use crate::trap;
 use alloc::collections::VecDeque;
-use alloc::sync::Arc;
 use lazy_static::lazy_static;
 use utils::x86;
 
@@ -23,6 +22,11 @@ const IDE_CMD_WRMUL: u8 = 0xC5;
 
 const PORT_BASE: u16 = 0x1F0;
 
+/// buffer has been read from disk
+const B_VALID: u8 = 0x2;
+/// buffer needs to be written to disk
+const B_DIRTY: u8 = 0x4;
+
 static mut HAVE_DISK1: bool = false;
 fn have_disk1() -> bool {
     unsafe { HAVE_DISK1 }
@@ -32,8 +36,23 @@ lazy_static! {
     static ref IDE_QUEUE: SpinMutex<IdeQueue> = SpinMutex::new("IDE_QUE", IdeQueue::new());
 }
 
+#[derive(PartialEq, Eq)]
+enum Command {
+    Read,
+    Write,
+}
+struct Request {
+    cmd: Command,
+    dev: u32,
+    block_no: u32,
+    data: *mut u8,
+    flags: *const Flags,
+    wait_chan: usize,
+}
+unsafe impl Send for Request {}
+
 struct IdeQueue {
-    que: VecDeque<BufRef>,
+    que: VecDeque<Request>,
     running: bool,
 }
 impl IdeQueue {
@@ -44,8 +63,8 @@ impl IdeQueue {
         }
     }
 
-    pub fn append(&mut self, b: BufRef) {
-        self.que.push_back(b);
+    pub fn append(&mut self, req: Request) {
+        self.que.push_back(req);
         // Start disk if necessary.
         if self.que.len() == 1 {
             self.start();
@@ -57,12 +76,10 @@ impl IdeQueue {
     }
 
     fn start(&mut self) {
-        let b = match self.que.front() {
-            Some(b) => b,
-            None => return,
-        };
+        let req = self.que.front().unwrap();
+
         let sector_per_block = BLK_SIZE / SECTOR_SIZE;
-        let sector = b.block_no as usize * sector_per_block;
+        let sector = req.block_no as usize * sector_per_block;
         let read_cmd = if sector_per_block == 1 {
             IDE_CMD_READ
         } else {
@@ -83,14 +100,16 @@ impl IdeQueue {
         x86::outb(0x1F5, ((sector >> 16) & 0xFF) as u8);
         x86::outb(
             0x1F6,
-            0xE0 | (((b.dev & 1) << 4) as u8) | ((sector >> 24) & 0x0F) as u8,
+            0xE0 | (((req.dev & 1) << 4) as u8) | ((sector >> 24) & 0x0F) as u8,
         );
-        if b.dirty() {
-            x86::outb(0x1F7, write_cmd);
-            let data = b.data.lock();
-            x86::outsl(0x1F0, data.as_ptr() as *const u32, data.len() / 4);
-        } else {
-            x86::outb(0x1F0, read_cmd);
+        match req.cmd {
+            Command::Read => {
+                x86::outb(0x1F0, read_cmd);
+            }
+            Command::Write => {
+                x86::outb(0x1F7, write_cmd);
+                x86::outsl(0x1F0, req.data as *const u32, BLK_SIZE / 4);
+            }
         }
 
         self.running = true;
@@ -98,18 +117,18 @@ impl IdeQueue {
 
     fn notify_ready(&mut self) {
         self.running = false;
-        let b = self.que.pop_front().unwrap();
+        let req = self.que.pop_front().unwrap();
 
         // Read data if needed.
-        if !b.dirty() && wait(true).is_some() {
-            let mut data = b.data.lock();
-            x86::insl(0x1F0, data.as_mut_ptr() as *mut u32, data.len() / 4);
+        if req.cmd == Command::Read && wait(true).is_some() {
+            x86::insl(0x1F0, req.data as *mut u32, BLK_SIZE / 4);
         }
 
         // Wake process waiting for this buf.
-        b.set_valid();
-        b.clear_dirty();
-        proc::wakeup(Arc::as_ptr(&b) as usize);
+        // clear B_DIRTY and set B_VALID
+        unsafe { (*req.flags).set_dirty(false) };
+        unsafe { (*req.flags).set_valid(true) };
+        proc::wakeup(req.wait_chan);
 
         // Start disk on next buf in queue.
         if !self.is_empty() {
@@ -152,36 +171,48 @@ pub fn init() {
     x86::outb(PORT_BASE + 6, 0xE0 | (0 << 4));
 }
 
-pub fn read_from_disk(b: &BufRef) {
-    if b.valid() {
-        panic!("read_from_disk: nothing to do");
-    }
-    if b.dev != 0 && !have_disk1() {
-        panic!("read_from_disk: ide disk 1 not present");
+pub fn read_from_disk(b: &mut Buf) {
+    assert!(!b.flags.valid(), "read_from_disk: nothing to do");
+    if b.dev != 0 {
+        assert!(have_disk1(), "read_from_disk: ide disk 1 not present");
     }
 
     let mut ide_que = IDE_QUEUE.lock();
-    ide_que.append(b.clone());
+    let req = Request {
+        cmd: Command::Read,
+        dev: b.dev,
+        block_no: b.block_no,
+        data: b.data.as_mut_ptr(),
+        flags: &b.flags,
+        wait_chan: b.id(),
+    };
+    ide_que.append(req);
 
     // Wait for read request to finish.
-    while !b.valid() {
-        proc::sleep(Arc::as_ptr(b) as usize, &ide_que);
+    while !b.flags.valid() {
+        proc::sleep(b.id(), &ide_que);
     }
 }
-pub fn write_to_disk(b: &BufRef) {
-    if !b.dirty() {
-        panic!("read_from_disk: nothing to do");
-    }
-    if b.dev != 0 && !have_disk1() {
-        panic!("read_from_disk: ide disk 1 not present");
+pub fn write_to_disk(b: &Buf) {
+    assert!(b.flags.dirty(), "read_from_disk: nothing to do");
+    if b.dev != 0 {
+        assert!(have_disk1(), "read_from_disk: ide disk 1 not present");
     }
 
     let mut ide_que = IDE_QUEUE.lock();
-    ide_que.append(b.clone());
+    let req = Request {
+        cmd: Command::Read,
+        dev: b.dev,
+        block_no: b.block_no,
+        data: b.data.as_ptr() as *const _ as *mut _,
+        flags: &b.flags,
+        wait_chan: b.id(),
+    };
+    ide_que.append(req);
 
     // Wait for write request to finish.
-    while b.dirty() {
-        proc::sleep(Arc::as_ptr(b) as usize, &ide_que);
+    while b.flags.dirty() {
+        proc::sleep(b.id(), &ide_que);
     }
 }
 

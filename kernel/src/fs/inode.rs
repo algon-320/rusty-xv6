@@ -49,8 +49,7 @@ impl Inode {
         if indirect != 0 {
             let b = bcache::read(self.dev, indirect);
             {
-                let body = b.data.lock();
-                let slots = unsafe { *(body.as_ptr() as *const _ as *const [u32; N_INDIRECT]) };
+                let slots = unsafe { *(b.data.as_ptr() as *const _ as *const [u32; N_INDIRECT]) };
                 for addr in slots.iter() {
                     if *addr != 0 {
                         free_disk_block(self.dev, *addr);
