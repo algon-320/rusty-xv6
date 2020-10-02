@@ -91,10 +91,10 @@ pub mod spin {
     unsafe impl<T: Send> Send for SpinMutex<T> {}
     unsafe impl<T: Send> Sync for SpinMutex<T> {}
 
-    pub struct SpinMutexGuard<'a, T> {
+    pub struct SpinMutexGuard<'a, T: 'a> {
         mtx: &'a SpinMutex<T>,
     }
-    impl<'a, T> SpinMutexGuard<'a, T> {
+    impl<'a, T: 'a> SpinMutexGuard<'a, T> {
         pub unsafe fn force_unlocked(&self) {
             self.mtx.lock.release()
         }
@@ -103,18 +103,18 @@ pub mod spin {
         }
     }
     use core::ops::{Deref, DerefMut};
-    impl<'a, T> Deref for SpinMutexGuard<'a, T> {
+    impl<'a, T: 'a> Deref for SpinMutexGuard<'a, T> {
         type Target = T;
         fn deref(&self) -> &Self::Target {
             unsafe { &*self.mtx.data.get() }
         }
     }
-    impl<'a, T> DerefMut for SpinMutexGuard<'a, T> {
+    impl<'a, T: 'a> DerefMut for SpinMutexGuard<'a, T> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             unsafe { &mut *self.mtx.data.get() }
         }
     }
-    impl<'a, T> Drop for SpinMutexGuard<'a, T> {
+    impl<'a, T: 'a> Drop for SpinMutexGuard<'a, T> {
         fn drop(&mut self) {
             self.mtx.lock.release();
         }
@@ -176,22 +176,22 @@ pub mod sleep {
     unsafe impl<T: Send> Send for SleepMutex<T> {}
     unsafe impl<T: Send> Sync for SleepMutex<T> {}
 
-    pub struct SleepMutexGuard<'a, T> {
+    pub struct SleepMutexGuard<'a, T: 'a> {
         mtx: &'a SleepMutex<T>,
     }
     use core::ops::{Deref, DerefMut};
-    impl<'a, T> Deref for SleepMutexGuard<'a, T> {
+    impl<'a, T: 'a> Deref for SleepMutexGuard<'a, T> {
         type Target = T;
         fn deref(&self) -> &Self::Target {
             unsafe { &*self.mtx.data.get() }
         }
     }
-    impl<'a, T> DerefMut for SleepMutexGuard<'a, T> {
+    impl<'a, T: 'a> DerefMut for SleepMutexGuard<'a, T> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             unsafe { &mut *self.mtx.data.get() }
         }
     }
-    impl<'a, T> Drop for SleepMutexGuard<'a, T> {
+    impl<'a, T: 'a> Drop for SleepMutexGuard<'a, T> {
         fn drop(&mut self) {
             self.mtx.lock.release();
         }
