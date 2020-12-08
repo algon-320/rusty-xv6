@@ -32,3 +32,11 @@ $ make gdb-attach
 ```
 $ make test
 ```
+
+## Progress
+- [x] Bootloader
+- [x] Startup initializations
+- [x] Scheduler
+- [ ] File system
+- [ ] System calls
+- [ ] User space processes
