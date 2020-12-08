@@ -18,5 +18,5 @@ jobs:
     - run: sudo apt-get update
     - name: install QEMU
       run: sudo apt-get install qemu-system-x86
-    - run: echo "::add-path::$(pwd)"
+    - run: echo "$(pwd)" >> $GITHUB_PATH
     - run: make test
